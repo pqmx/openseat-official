@@ -1,16 +1,17 @@
 import { Pressable, Text, View } from 'react-native';
 import { BackIcon, MenuIcon, MoreIcon } from '../components/icons';
+import { RoomRow } from '../components/rooms';
 import {
   Body,
   Chip,
   Eyebrow,
   ImageSlot,
   PrimaryButton,
-  StatusLine,
   StatusStrip,
   TabBar,
   TextButton,
 } from '../components/ui';
+import { hostedBy, personById, useNow, you } from '../data';
 import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -34,57 +35,13 @@ const Prompt = ({ label, answer, placeholder }: { label: string; answer: string;
   );
 };
 
-/** A room in the "rooms X hosts" list — smaller than a feed row. */
-const HostedRoom = ({
-  status,
-  statusColor,
-  pulse,
-  title,
-  right,
-}: {
-  status: string;
-  statusColor: string;
-  pulse?: boolean;
-  title: string;
-  right: string;
-}) => {
-  const { c } = useTheme();
-  const { go } = useNav();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      onPress={() => go('room')}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
-        gap: 12,
-      }}>
-      <View>
-        <StatusLine label={status} color={statusColor} pulse={pulse} small />
-        <Text
-          style={{
-            fontFamily: font.bold,
-            fontSize: 15,
-            letterSpacing: em(-0.015, 15),
-            color: c.ink,
-            marginTop: 5,
-          }}>
-          {title}
-        </Text>
-      </View>
-      <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>{right}</Text>
-    </Pressable>
-  );
-};
-
-const interests = ['film photo', 'rooftops', 'house shows', 'thrifting', 'late library'];
-
-/** Someone else's profile, fully filled in. */
+/** Someone else's profile. */
 export function Profile() {
   const { c } = useTheme();
-  const { back, go } = useNav();
+  const { route, back, go } = useNav();
+  const now = useNow();
+  const person = personById(route.personId ?? '') ?? you;
+  const hosts = hostedBy(person.id, now);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -111,49 +68,42 @@ export function Profile() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
           <ImageSlot size={92} placeholder="Portrait" />
           <View style={{ flexShrink: 1 }}>
-            <Text style={[name, { color: c.ink }]}>Maya Jiménez</Text>
+            <Text style={[name, { color: c.ink }]}>{person.name}</Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 6 }}>
-              '27 · Architecture
+              {person.year} · {person.major}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-              Rieber Hall · 7 rooms hosted
+              {[person.dorm, `${hosts.length} ${hosts.length === 1 ? 'room' : 'rooms'} hosted`]
+                .filter(Boolean)
+                .join(' · ')}
             </Text>
           </View>
         </View>
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-          {interests.map((i) => (
-            <Chip key={i} label={i} />
-          ))}
-        </View>
+        {person.interests?.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+            {person.interests.map((i) => (
+              <Chip key={i} label={i} />
+            ))}
+          </View>
+        ) : null}
 
-        <View style={{ gap: 18 }}>
-          <Prompt
-            label="MY IDEAL FRIDAY IS"
-            answer="Someone's speaker on a roof and zero plans after"
-          />
-          <Prompt
-            label="TAKE ME TO A ROOM ABOUT"
-            answer="Anything that ends up at Diddy Riese"
-          />
-        </View>
+        {person.prompts?.length ? (
+          <View style={{ gap: 18 }}>
+            {person.prompts.map((p) => (
+              <Prompt key={p.q} label={p.q} answer={p.a} />
+            ))}
+          </View>
+        ) : null}
 
-        <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair, gap: 12 }}>
-          <Eyebrow>ROOMS MAYA HOSTS</Eyebrow>
-          <HostedRoom
-            status="LIVE"
-            statusColor={c.green}
-            pulse
-            title="Sunset set on Lot D roof"
-            right="14 here"
-          />
-          <HostedRoom
-            status="SAT 4 PM"
-            statusColor={c.blue}
-            title="Film swap, Sunset Rec"
-            right="9 seats"
-          />
-        </View>
+        {hosts.length ? (
+          <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair, gap: 12 }}>
+            <Eyebrow>ROOMS {person.short.toUpperCase()} HOSTS</Eyebrow>
+            {hosts.map((room) => (
+              <RoomRow key={room.id} room={room} now={now} small />
+            ))}
+          </View>
+        ) : null}
 
         <View
           style={{

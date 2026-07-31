@@ -81,7 +81,9 @@ const Picker = ({
     </Pressable>
   );
   return (
-    <SafeAreaView style={{ position: 'absolute', right: 12, bottom: 96 }}>
+    // Left-aligned: the bottom-right corner is where screens put their real
+    // actions ("Leave room", "Report or block").
+    <SafeAreaView style={{ position: 'absolute', left: 12, bottom: 96 }}>
       <View
         style={{
           flexDirection: 'row',

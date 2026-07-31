@@ -20,6 +20,10 @@ export type Person = {
   year: string;
   major: string;
   tone?: Tone;
+  dorm?: string;
+  interests?: string[];
+  /** The design's two profile prompts. */
+  prompts?: { q: string; a: string }[];
 };
 
 export type Update = {
@@ -59,8 +63,31 @@ export type Room = {
 };
 
 export const people: Person[] = [
-  { id: 'mj', initials: 'MJ', short: 'Maya', name: 'Maya J', year: "'27", major: 'Architecture' },
-  { id: 'at', initials: 'AT', short: 'Ade', name: 'Ade T', year: "'28", major: 'Econ' },
+  {
+    id: 'mj',
+    initials: 'MJ',
+    short: 'Maya',
+    name: 'Maya J',
+    year: "'27",
+    major: 'Architecture',
+    dorm: 'Rieber Hall',
+    interests: ['film photo', 'rooftops', 'house shows', 'thrifting', 'late library'],
+    prompts: [
+      { q: 'MY IDEAL FRIDAY IS', a: "Someone's speaker on a roof and zero plans after" },
+      { q: 'TAKE ME TO A ROOM ABOUT', a: 'Anything that ends up at Diddy Riese' },
+    ],
+  },
+  {
+    id: 'at',
+    initials: 'AT',
+    short: 'Ade',
+    name: 'Ade T',
+    year: "'28",
+    major: 'Econ',
+    dorm: 'Hedrick Hall',
+    interests: ['pickup soccer', 'cheap dinners', 'ceramics'],
+    prompts: [{ q: 'MY IDEAL FRIDAY IS', a: 'Broxton, then wherever the group drifts' }],
+  },
   { id: 'rk', initials: 'RK', short: 'Ro', name: 'Ro K', year: "'27", major: 'Sociology' },
   { id: 'sp', initials: 'SP', short: 'Sam', name: 'Sam P', year: "'29", major: 'Undeclared' },
   { id: 'dl', initials: 'DL', short: 'Dee', name: 'Dee L', year: "'28", major: 'Physics' },
@@ -146,7 +173,7 @@ export const rooms: Room[] = [
   {
     id: 'diddy',
     title: 'Diddy Riese run, then the hill',
-    place: 'Broxton Ave',
+    place: 'Outside Diddy Riese',
     street: 'Broxton Ave',
     walkMinutes: 6,
     hostId: 'sp',
@@ -188,7 +215,7 @@ export const rooms: Room[] = [
   {
     id: 'dinner',
     title: "Grab dinner, whoever's around",
-    place: 'Broxton Ave',
+    place: 'A place on Broxton',
     street: 'Westwood',
     walkMinutes: 10,
     hostId: 'at',
@@ -250,6 +277,12 @@ export const rooms: Room[] = [
 
 export const roomById = (id: string) => rooms.find((r) => r.id === id) ?? rooms[0];
 export const personById = (id: string) => people.find((p) => p.id === id);
+
+/** Rooms this person hosts, live first — the tail of their profile. */
+export const hostedBy = (personId: string, now: Date) =>
+  rooms
+    .filter((r) => r.hostId === personId && !r.canceledAt)
+    .sort((a, b) => Number(isLive(b, now)) - Number(isLive(a, now)));
 export const hostOf = (room: Room) => personById(room.hostId) ?? you;
 
 /** Named people only — the roster is padded with anonymous ids for the count. */
