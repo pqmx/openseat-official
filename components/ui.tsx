@@ -11,22 +11,13 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import type { Tone } from '../data';
 import { useNav } from '../nav';
 import { font, radius, type, useTheme, type Colors } from '../theme';
 import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon, SearchIcon } from './icons';
 
 /** The design's 50px status-bar strip; the real OS bar draws into it. */
 export const StatusStrip = () => <View style={{ height: 50 }} />;
-
-export const Screen = ({ children }: { children: React.ReactNode }) => {
-  const { c } = useTheme();
-  return (
-    <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <StatusStrip />
-      {children}
-    </View>
-  );
-};
 
 export const Eyebrow = ({
   children,
@@ -74,7 +65,7 @@ export const Dot = ({
 };
 
 /** `@keyframes osPulse` — 2.4s, opacity 1 -> .3 -> 1. */
-export const PulseDot = ({ color, size = 6 }: { color: string; size?: number }) => {
+const PulseDot = ({ color, size = 6 }: { color: string; size?: number }) => {
   const v = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -136,9 +127,7 @@ export const StatusLine = ({
   );
 };
 
-type AvatarTone = 'fill' | 'water' | 'park';
-
-const toneOf = (c: Colors, tone: AvatarTone) =>
+const toneOf = (c: Colors, tone: Tone) =>
   tone === 'water'
     ? { backgroundColor: c.water, color: c.avBlue }
     : tone === 'park'
@@ -153,7 +142,7 @@ export const Avatar = ({
   stacked,
 }: {
   initials: string;
-  tone?: AvatarTone;
+  tone?: Tone;
   host?: boolean;
   size?: number;
   /** Overlapping row variant: thicker surface-coloured ring, negative offset. */
@@ -210,7 +199,7 @@ export const AvatarCell = ({
 }: {
   initials: string;
   name: string;
-  tone?: AvatarTone;
+  tone?: Tone;
   host?: boolean;
   onPress?: () => void;
 }) => {
@@ -282,11 +271,6 @@ export const ImageSlot = ({ size, placeholder }: { size: number; placeholder: st
       </Text>
     </View>
   );
-};
-
-export const Rule = ({ color, style }: { color?: string; style?: StyleProp<ViewStyle> }) => {
-  const { c } = useTheme();
-  return <View style={[{ height: 1, backgroundColor: color ?? c.hair }, style]} />;
 };
 
 export const PrimaryButton = ({
@@ -518,22 +502,6 @@ export const Field = ({
   );
 };
 
-/** The coral text caret shown inside "focused" fields. */
-export const Caret = ({ height = 15 }: { height?: number }) => {
-  const { c } = useTheme();
-  return (
-    <View
-      style={{
-        width: 1.5,
-        height,
-        backgroundColor: c.coral,
-        marginLeft: 2,
-        alignSelf: 'center',
-      }}
-    />
-  );
-};
-
 /**
  * Map plate. CSS draws the grid with repeating-linear-gradient; RN has no
  * equivalent, so the bands are Views. Counts are fixed and clipped by
@@ -647,21 +615,39 @@ export const MapSearchBar = () => {
 
 export type Tab = 'discover' | 'rooms' | 'you';
 
+/**
+ * Four equal slots. The design floated the create button between the third
+ * and fourth tab, which lands it off-centre and reading as misplaced; giving
+ * it a slot and a label of its own makes the row even and says what it does.
+ */
 export const TabBar = ({ active }: { active: Tab }) => {
   const { c } = useTheme();
   const { reset, go } = useNav();
-  const tint = (t: Tab) => (t === active ? c.ink : c.faint);
-  const tab = (t: Tab, label: string, Icon: typeof HomeIcon, to: () => void) => (
+  const slot = (
+    label: string,
+    selected: boolean,
+    icon: React.ReactNode,
+    onPress: () => void
+  ) => (
     <Pressable
+      key={label}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: t === active }}
-      onPress={to}
-      style={{ alignItems: 'center', gap: 5 }}>
-      <Icon color={tint(t)} />
-      <Text style={{ fontFamily: font.regular, fontSize: 10, color: tint(t) }}>{label}</Text>
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={{ flex: 1, alignItems: 'center', gap: 5 }}>
+      <View style={{ height: 28, justifyContent: 'center' }}>{icon}</View>
+      <Text
+        style={{
+          fontFamily: font.regular,
+          fontSize: 10,
+          color: selected ? c.ink : c.faint,
+        }}>
+        {label}
+      </Text>
     </Pressable>
   );
+  const tint = (t: Tab) => (t === active ? c.ink : c.faint);
   return (
     <View
       style={{
@@ -671,29 +657,32 @@ export const TabBar = ({ active }: { active: Tab }) => {
         borderTopColor: c.hair,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-around',
-        paddingHorizontal: 26,
+        paddingHorizontal: 12,
         paddingBottom: 16,
       }}>
-      {tab('discover', 'Discover', HomeIcon, () => reset('discover'))}
-      {/* No rooms-list screen exists — Rooms opens the room you're in. */}
-      {tab('rooms', 'Rooms', ClockIcon, () => reset('room'))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open a room"
-        onPress={() => go('create1')}
-        style={{
-          width: 40,
-          height: 40,
-          marginBottom: 12,
-          borderRadius: radius.card,
-          backgroundColor: c.coral,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        <PlusIcon color={c.onCoral} />
-      </Pressable>
-      {tab('you', 'You', PersonIcon, () => reset('profileEmpty'))}
+      {slot('Discover', active === 'discover', <HomeIcon color={tint('discover')} />, () =>
+        reset('discover')
+      )}
+      {slot('Rooms', active === 'rooms', <ClockIcon color={tint('rooms')} />, () => reset('rooms'))}
+      {slot(
+        'New',
+        false,
+        <View
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: radius.chip,
+            backgroundColor: c.coral,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <PlusIcon size={16} color={c.onCoral} />
+        </View>,
+        () => go('create1')
+      )}
+      {slot('You', active === 'you', <PersonIcon color={tint('you')} />, () =>
+        reset('profileEmpty')
+      )}
     </View>
   );
 };

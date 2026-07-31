@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
+import { RoomStatus } from '../components/rooms';
 import { BackIcon, LockIcon, MoreIcon } from '../components/icons';
 import {
   Avatar,
@@ -7,29 +8,38 @@ import {
   Body,
   Chip,
   Dot,
+  Eyebrow,
   MapPlate,
   NoteItem,
   PrimaryButton,
   SlotCell,
   StatusStrip,
-  StatusLine,
   TextButton,
 } from '../components/ui';
+import {
+  feedFor,
+  hostOf,
+  isLive,
+  personById,
+  roomById,
+  rosterOf,
+  seatsLeft,
+  statusOf,
+  useNow,
+  you,
+  type Person,
+  type Room as RoomModel,
+  type Update,
+} from '../data';
 import { useNav } from '../nav';
+import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
-/** The roster the design's `renderVals()` builds. */
-export const roster = [
-  { initials: 'MJ', name: 'Maya', host: true },
-  { initials: 'AT', name: 'Ade' },
-  { initials: 'RK', name: 'Ro' },
-  { initials: 'SP', name: 'Sam' },
-  { initials: 'DL', name: 'Dee' },
-  { initials: 'NB', name: 'Nia' },
-  { initials: 'JC', name: 'Jos' },
-  { initials: 'TV', name: 'Theo' },
-  { initials: 'EM', name: 'Emi' },
-];
+/** The room this screen is showing. Falls back to the flagship fixture. */
+const useRoom = (fallback = 'sunset') => {
+  const { route } = useNav();
+  return roomById(route.roomId ?? fallback);
+};
 
 const RoomTopBar = ({
   center,
@@ -68,23 +78,30 @@ const RoomTopBar = ({
   );
 };
 
-/** Small outlined tag beside the live status — JOINED, CASUAL, LOCKED. */
-const StateTag = ({ label, icon }: { label: string; icon?: boolean }) => {
+/** Small outlined tag beside the status — JOINED, CASUAL, LOCKED. */
+const StateTag = ({ label, icon, filled }: { label: string; icon?: boolean; filled?: boolean }) => {
   const { c } = useTheme();
   return (
     <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingVertical: 3,
-        paddingHorizontal: 8,
-        borderRadius: radius.xs,
-        borderWidth: 1,
-        borderColor: c.hair2,
-      }}>
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          paddingVertical: 3,
+          paddingHorizontal: filled ? 9 : 8,
+          borderRadius: radius.xs,
+        },
+        filled
+          ? { backgroundColor: c.coral }
+          : { borderWidth: 1, borderColor: c.hair2 },
+      ]}>
       {icon ? <LockIcon size={10} color={c.mute2} /> : null}
-      <Text style={[type.eyebrow, { fontSize: 9.5, letterSpacing: em(0.14, 9.5), color: c.mute2 }]}>
+      <Text
+        style={[
+          type.eyebrow,
+          { fontSize: 9.5, letterSpacing: em(0.14, 9.5), color: filled ? c.onCoral : c.mute2 },
+        ]}>
         {label}
       </Text>
     </View>
@@ -95,16 +112,53 @@ const SectionHead = ({ label, right }: { label: string; right: string }) => {
   const { c } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-      <Text style={[type.eyebrow, { color: c.mute2 }]}>{label}</Text>
+      <Eyebrow>{label}</Eyebrow>
       <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>{right}</Text>
     </View>
   );
 };
 
-const address = 'Lot D rooftop, Charles E Young Dr, Los Angeles';
+/**
+ * The "who's here" grid. Named people first, then one dashed cell standing in
+ * for whoever the roster doesn't name — or for the seats still open.
+ */
+const Roster = ({
+  room,
+  extra = [],
+  shown = 6,
+  showOpenSeats,
+}: {
+  room: RoomModel;
+  /** Anyone approved during this session. */
+  extra?: Person[];
+  shown?: number;
+  showOpenSeats?: boolean;
+}) => {
+  const { go } = useNav();
+  const named = [...rosterOf(room), ...extra].slice(0, shown);
+  const unnamed = room.attendees.length + extra.length - named.length;
+  const open = seatsLeft(room) - extra.length;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+      {named.map((p) => (
+        <AvatarCell
+          key={p.id}
+          initials={p.initials}
+          name={p.id === you.id ? 'You' : p.short}
+          tone={p.tone}
+          host={p.id === room.hostId}
+          onPress={() => go(p.id === you.id ? 'profileEmpty' : 'profile', { personId: p.id })}
+        />
+      ))}
+      {showOpenSeats
+        ? open > 0 && <SlotCell badge={`${open}`} label="open" />
+        : unnamed > 0 && <SlotCell badge={`+${unnamed}`} label="more" />}
+    </View>
+  );
+};
 
-/** Precise-location map card shown once you're in the room. */
-const RoomMap = () => {
+/** Precise-location map card, shown once you're in the room. */
+const RoomMap = ({ room }: { room: RoomModel }) => {
   const { c } = useTheme();
   return (
     <MapPlate
@@ -129,17 +183,19 @@ const RoomMap = () => {
           justifyContent: 'space-between',
           gap: 10,
         }}>
-        <View>
-          <Text style={{ fontFamily: font.medium, fontSize: 13, color: c.ink }}>
-            Lot D rooftop, level 5
-          </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: font.medium, fontSize: 13, color: c.ink }}>{room.place}</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.mute }}>
-            Charles E Young Dr · 4 min walk
+            {room.street} · {room.walkMinutes} min walk
           </Text>
         </View>
         <TextButton
           label="Directions"
-          onPress={() => Linking.openURL(`http://maps.apple.com/?q=${encodeURIComponent(address)}`)}
+          onPress={() =>
+            Linking.openURL(
+              `http://maps.apple.com/?q=${encodeURIComponent(`${room.place}, ${room.street}`)}`
+            )
+          }
           style={{ fontFamily: font.medium, fontSize: 12.5, color: c.blue }}
         />
       </View>
@@ -177,68 +233,83 @@ const Footer = ({
   );
 };
 
-/** Live room, member view. `avatarsShown` / `roomSize` mirror the design props. */
-export function Room({
-  avatarsShown = 6,
-  roomSize = 14,
-  hostUpdate = "On the roof by the stairwell door — text me if the badge reader is being weird",
-}: {
-  avatarsShown?: number;
-  roomSize?: number;
-  hostUpdate?: string;
-}) {
+const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label: string }) => {
   const { c } = useTheme();
-  const { go, reset } = useNav();
-  const shown = Math.max(1, Math.min(roster.length, avatarsShown));
-  const members = roster.slice(0, shown);
+  return (
+    <View style={{ gap: 14 }}>
+      <Eyebrow>{label}</Eyebrow>
+      {updates.length === 0 ? (
+        <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
+          Nothing posted yet.
+        </Text>
+      ) : (
+        updates.map((u, i) => {
+          const author = personById(u.byId);
+          const mine = u.byId === you.id;
+          return (
+            <NoteItem
+              key={u.id}
+              text={u.text}
+              meta={[
+                mine ? 'You' : author?.name,
+                ago(u.at, now),
+                u.seenBy ? `seen by ${u.seenBy}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              accent={i === 0 ? c.green : undefined}
+              muted={i > 0}
+            />
+          );
+        })
+      )}
+    </View>
+  );
+};
+
+/** Live room, member view. */
+export function Room() {
+  const { c } = useTheme();
+  const { reset } = useNav();
+  const now = useNow();
+  const room = useRoom();
+  const host = hostOf(room);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <StatusLine label="LIVE · 22M" color={c.green} pulse />
-            <StateTag label="JOINED" />
+            <RoomStatus status={statusOf(room, now)} />
+            <StateTag label={room.attendees.includes(you.id) ? 'JOINED' : 'OPEN'} />
           </View>
         }
       />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 22 }}>
         <View>
-          <Text style={[type.displayLg, { color: c.ink }]}>Sunset set on Lot D roof</Text>
+          <Text style={[type.displayLg, { color: c.ink }]}>{room.title}</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            Hosted by Maya J · '27, Architecture
+            Hosted by {host.name} · {host.year}, {host.major}
           </Text>
         </View>
 
-        <RoomMap />
+        <RoomMap room={room} />
 
         <View>
           <View style={{ marginBottom: 14 }}>
-            <SectionHead label="WHO'S HERE" right={`${roomSize} here now`} />
+            <SectionHead
+              label="WHO'S HERE"
+              right={
+                isLive(room, now)
+                  ? `${room.attendees.length} here now`
+                  : `${room.attendees.length} going`
+              }
+            />
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            {members.map((m) => (
-              <AvatarCell
-                key={m.initials}
-                initials={m.initials}
-                name={m.name}
-                host={m.host}
-                onPress={() => go('profile')}
-              />
-            ))}
-            <SlotCell badge={`+${Math.max(0, roomSize - shown)}`} label="more" />
-          </View>
+          <Roster room={room} />
         </View>
 
-        <View style={{ gap: 14 }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>HOST UPDATES</Text>
-          <NoteItem text={hostUpdate} meta="Maya J · 2 min ago" accent={c.green} />
-          <NoteItem
-            text="Room opened — bring a layer, it's windy up here"
-            meta="22 min ago"
-            muted
-          />
-        </View>
+        <Updates updates={room.updates} now={now} label="HOST UPDATES" />
       </Body>
 
       <Footer>
@@ -246,7 +317,7 @@ export function Room({
           <LockIcon color={c.mute2} />
           <Text
             style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, lineHeight: 12.5 * 1.4 }}>
-            Only Maya posts updates.{'\n'}You'll get a ping for each one.
+            Only {host.short} posts updates.{'\n'}You'll get a ping for each one.
           </Text>
         </View>
         <TextButton
@@ -262,51 +333,45 @@ export function Room({
 /** Live room, host view — stats, roster, and the host-only composer. */
 export function RoomHost() {
   const { c } = useTheme();
-  const { go, reset } = useNav();
-  const [draft, setDraft] = useState('Moving to the east ledge — better view');
-  const [updates, setUpdates] = useState([
-    {
-      text: 'On the roof by the stairwell door — text me if the badge reader is being weird',
-      meta: 'You · 2 min ago · seen by 12',
-    },
-    {
-      text: "Room opened — bring a layer, it's windy up here",
-      meta: 'You · 22 min ago · seen by 14',
-    },
-  ]);
+  const { reset } = useNav();
+  const now = useNow();
+  const room = useRoom();
+  const [draft, setDraft] = useState('');
+  const [updates, setUpdates] = useState(room.updates);
   const post = () => {
     const text = draft.trim();
     if (!text) return;
-    setUpdates((u) => [{ text, meta: 'You · just now · seen by 0' }, ...u]);
+    setUpdates((u) => [
+      { id: `u${Date.now()}`, text, at: new Date(), byId: you.id, seenBy: 0 },
+      ...u,
+    ]);
     setDraft('');
   };
+  const stat = (n: string, label: string) => (
+    <View key={label}>
+      <Text style={{ fontFamily: font.bold, fontSize: 19, color: c.ink }}>{n}</Text>
+      <Text
+        style={{ fontFamily: font.regular, fontSize: 11, letterSpacing: em(0.1, 11), color: c.mute2 }}>
+        {label}
+      </Text>
+    </View>
+  );
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <StatusLine label="LIVE · 22M" color={c.green} pulse />
-            <View
-              style={{
-                paddingVertical: 3,
-                paddingHorizontal: 9,
-                borderRadius: radius.xs,
-                backgroundColor: c.coral,
-              }}>
-              <Text
-                style={[type.eyebrow, { fontSize: 9.5, letterSpacing: em(0.14, 9.5), color: c.onCoral }]}>
-                YOU'RE HOSTING
-              </Text>
-            </View>
+            <RoomStatus status={statusOf(room, now)} />
+            <StateTag label="YOU'RE HOSTING" filled />
           </View>
         }
       />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 20 }}>
         <View>
-          <Text style={[type.display, { color: c.ink }]}>Sunset set on Lot D roof</Text>
+          <Text style={[type.display, { color: c.ink }]}>{room.title}</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            You're hosting · 14 joined · cap 18
+            You're hosting · {room.attendees.length} joined · cap {room.capacity}
           </Text>
         </View>
 
@@ -318,72 +383,41 @@ export function RoomHost() {
             borderBottomWidth: 1,
             borderBottomColor: c.hair,
           }}>
-          {[
-            { n: '14', label: 'HERE NOW' },
-            { n: '4', label: 'ON THE WAY' },
-          ].map((s) => (
-            <View key={s.label}>
-              <Text style={{ fontFamily: font.bold, fontSize: 19, color: c.ink }}>{s.n}</Text>
-              <Text
-                style={{
-                  fontFamily: font.regular,
-                  fontSize: 11,
-                  letterSpacing: em(0.1, 11),
-                  color: c.mute2,
-                }}>
-                {s.label}
-              </Text>
-            </View>
-          ))}
+          {stat(`${room.attendees.length}`, 'HERE NOW')}
+          {stat(`${seatsLeft(room)}`, 'SEATS LEFT')}
           <View style={{ marginLeft: 'auto', alignSelf: 'center', flexDirection: 'row', gap: 8 }}>
             <Chip
               label="Share"
               style={{ paddingVertical: 6 }}
               onPress={() =>
-                Share.share({ message: 'Sunset set on Lot D roof — open seat on openseat' })
+                Share.share({ message: `${room.title} — open seat on openseat` })
               }
             />
             <Chip
               label="End room"
               color={c.danger}
               style={{ paddingVertical: 6 }}
-              onPress={() => reset('roomCanceled')}
+              onPress={() => reset('roomCanceled', { roomId: room.id })}
             />
           </View>
         </View>
 
         <View>
           <View style={{ marginBottom: 12 }}>
-            <SectionHead label="WHO'S HERE" right="14 here now" />
+            <SectionHead label="WHO'S HERE" right={`${room.attendees.length} here now`} />
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            <AvatarCell initials="MJ" name="You" host onPress={() => go('profileEmpty')} />
-            <AvatarCell initials="AT" name="Ade" onPress={() => go('profile')} />
-            <AvatarCell initials="RK" name="Ro" onPress={() => go('profile')} />
-            <AvatarCell initials="SP" name="Sam" onPress={() => go('profile')} />
-            <AvatarCell initials="DL" name="Dee" onPress={() => go('profile')} />
-            <SlotCell badge="+9" label="more" />
-          </View>
+          <Roster room={room} />
         </View>
 
-        <View style={{ gap: 12 }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>YOUR UPDATES</Text>
-          {updates.map((u, i) => (
-            <NoteItem
-              key={u.meta + i}
-              text={u.text}
-              meta={u.meta}
-              accent={i === 0 ? c.green : undefined}
-              muted={i > 0}
-            />
-          ))}
-        </View>
+        <Updates updates={updates} now={now} label="YOUR UPDATES" />
       </Body>
 
       <Footer raised column gap={11}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
-          <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>Pings all 14</Text>
+          <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>
+            Pings all {room.attendees.length}
+          </Text>
         </View>
         <TextInput
           value={draft}
@@ -392,14 +426,13 @@ export function RoomHost() {
           placeholder="Tell the room something"
           placeholderTextColor={c.faint}
           selectionColor={c.coral}
-          onSubmitEditing={post}
           style={{
             minHeight: 52,
             paddingVertical: 12,
             paddingHorizontal: 14,
             borderRadius: radius.md,
             borderWidth: 1.5,
-            borderColor: c.ink,
+            borderColor: draft ? c.ink : c.hair2,
             backgroundColor: c.surface,
             fontFamily: font.regular,
             fontSize: 14,
@@ -408,12 +441,7 @@ export function RoomHost() {
           }}
         />
         <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}>
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
             Members can't post here
           </Text>
@@ -421,7 +449,11 @@ export function RoomHost() {
             label="Post update"
             height={38}
             onPress={post}
-            style={{ paddingHorizontal: 20, borderRadius: radius.md }}
+            style={{
+              paddingHorizontal: 20,
+              borderRadius: radius.md,
+              backgroundColor: draft.trim() ? c.coral : c.disabled,
+            }}
           />
         </View>
       </Footer>
@@ -433,36 +465,32 @@ export function RoomHost() {
 export function RoomHostRequests() {
   const { c } = useTheme();
   const { go } = useNav();
-  const [requests, setRequests] = useState([
-    { initials: 'NB', name: 'Nia B.', sub: "'28 · Design | Media Arts", tone: 'fill' as const },
-    { initials: 'TV', name: 'Theo V.', sub: "'27 · Materials Science", tone: 'park' as const },
-    { initials: 'EM', name: 'Emi M.', sub: "'29 · Undeclared", tone: 'water' as const },
-  ]);
-  const [approved, setApproved] = useState<{ initials: string; name: string }[]>([]);
-  const cap = 8;
-  const here = 5 + approved.length;
-  const decide = (initials: string, approve: boolean) => {
-    const r = requests.find((q) => q.initials === initials);
-    if (!r) return;
-    setRequests((v) => v.filter((q) => q.initials !== initials));
-    if (approve) setApproved((v) => [...v, { initials: r.initials, name: r.name.split(' ')[0] }]);
+  const now = useNow();
+  const room = useRoom('studio');
+  const [waiting, setWaiting] = useState(room.requests);
+  const [approved, setApproved] = useState<Person[]>([]);
+  const decide = (id: string, approve: boolean) => {
+    setWaiting((v) => v.filter((q) => q !== id));
+    const person = personById(id);
+    if (approve && person) setApproved((v) => [...v, person]);
   };
+  const here = room.attendees.length + approved.length;
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-            <StatusLine label="LIVE · 12M" color={c.green} pulse />
+            <RoomStatus status={statusOf(room, now)} />
             <StateTag label="LOCKED" icon />
           </View>
         }
       />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 20 }}>
         <View>
-          <Text style={[type.display, { color: c.ink }]}>Studio night, 8 people max</Text>
+          <Text style={[type.display, { color: c.ink }]}>{room.title}</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            You're hosting · {here} joined · cap {cap} · you approve each request
+            You're hosting · {here} joined · cap {room.capacity} · you approve each request
           </Text>
         </View>
 
@@ -474,63 +502,73 @@ export function RoomHostRequests() {
               justifyContent: 'space-between',
               marginBottom: 4,
             }}>
-            <StatusLine
-              label={`JOIN REQUESTS · ${requests.length}`}
-              color={requests.length ? c.coral : c.mute2}
-              outline={!requests.length}
+            <RoomStatus
+              status={{
+                label: `JOIN REQUESTS · ${waiting.length}`,
+                tone: waiting.length ? 'live' : 'off',
+              }}
             />
             <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
-              {cap - here} seats left
+              {Math.max(0, room.capacity - here)} seats left
             </Text>
           </View>
-          {requests.length === 0 ? (
+
+          {waiting.length === 0 ? (
             <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute, paddingTop: 14 }}>
               Nobody's waiting. New requests land here.
             </Text>
-          ) : null}
-          {requests.map((r, i) => (
-            <View
-              key={r.initials}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                paddingVertical: 14,
-                borderBottomWidth: i === requests.length - 1 ? 0 : 1,
-                borderBottomColor: c.hairFaint,
-              }}>
-              <Avatar initials={r.initials} tone={r.tone} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontFamily: font.medium, fontSize: 14.5, color: c.ink }}>{r.name}</Text>
-                <Text
-                  style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
-                  {r.sub}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <TextButton
-                  label="Decline"
-                  onPress={() => decide(r.initials, false)}
-                  style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Approve ${r.name}`}
-                  onPress={() => decide(r.initials, true)}
+          ) : (
+            waiting.map((id, i) => {
+              const p = personById(id);
+              if (!p) return null;
+              return (
+                <View
+                  key={id}
                   style={{
-                    paddingVertical: 7,
-                    paddingHorizontal: 13,
-                    borderRadius: radius.chip,
-                    borderWidth: 1.5,
-                    borderColor: c.ink,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    paddingVertical: 14,
+                    borderBottomWidth: i === waiting.length - 1 ? 0 : 1,
+                    borderBottomColor: c.hairFaint,
                   }}>
-                  <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
-                    Approve
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ))}
+                  <Avatar initials={p.initials} tone={p.tone} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontFamily: font.medium, fontSize: 14.5, color: c.ink }}>
+                      {p.name}.
+                    </Text>
+                    <Text
+                      style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
+                      {p.year} · {p.major}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <TextButton
+                      label="Decline"
+                      onPress={() => decide(id, false)}
+                      style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Approve ${p.name}`}
+                      onPress={() => decide(id, true)}
+                      style={{
+                        paddingVertical: 7,
+                        paddingHorizontal: 13,
+                        borderRadius: radius.chip,
+                        borderWidth: 1.5,
+                        borderColor: c.ink,
+                      }}>
+                      <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
+                        Approve
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.faint, marginTop: 12 }}>
             Requests close when the room ends. Nobody sees the address until you approve.
           </Text>
@@ -540,22 +578,7 @@ export function RoomHostRequests() {
           <View style={{ marginBottom: 12 }}>
             <SectionHead label="WHO'S HERE" right={`${here} approved`} />
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            <AvatarCell initials="MJ" name="You" host onPress={() => go('profileEmpty')} />
-            <AvatarCell initials="AT" name="Ade" onPress={() => go('profile')} />
-            <AvatarCell initials="RK" name="Ro" onPress={() => go('profile')} />
-            <AvatarCell initials="SP" name="Sam" onPress={() => go('profile')} />
-            <AvatarCell initials="DL" name="Dee" onPress={() => go('profile')} />
-            {approved.map((a) => (
-              <AvatarCell
-                key={a.initials}
-                initials={a.initials}
-                name={a.name}
-                onPress={() => go('profile')}
-              />
-            ))}
-            <SlotCell badge={`${cap - here}`} label="open" />
-          </View>
+          <Roster room={room} extra={approved} showOpenSeats />
         </View>
       </Body>
 
@@ -564,7 +587,11 @@ export function RoomHostRequests() {
           style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
           Only you post{'\n'}updates here
         </Text>
-        <PrimaryButton label="Post an update" onPress={() => go('roomHost')} style={{ flex: 1 }} />
+        <PrimaryButton
+          label="Post an update"
+          onPress={() => go('roomHost', { roomId: room.id })}
+          style={{ flex: 1 }}
+        />
       </Footer>
     </View>
   );
@@ -577,22 +604,26 @@ export function RoomHostRequests() {
 export function RoomCasualPreJoin() {
   const { c } = useTheme();
   const { go } = useNav();
+  const now = useNow();
+  const room = useRoom('dinner');
+  const host = hostOf(room);
+  const left = seatsLeft(room);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <StatusLine label="TONIGHT · 7:30 PM" color={c.blue} />
+            <RoomStatus status={statusOf(room, now)} />
             <StateTag label="CASUAL" />
           </View>
         }
       />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 22 }}>
         <View>
-          <Text style={[type.displayLg, { color: c.ink }]}>Grab dinner, whoever's around</Text>
+          <Text style={[type.displayLg, { color: c.ink }]}>{room.title}</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            Ade T · '28, Econ · 2 of 4 seats
+            {host.name} · {host.year}, {host.major} · {room.attendees.length} of {room.capacity} seats
           </Text>
         </View>
 
@@ -651,7 +682,7 @@ export function RoomCasualPreJoin() {
                 color: c.ink2,
                 transform: [{ translateY: -8 }],
               }}>
-              Near Westwood
+              Near {room.street}
             </Text>
             <View
               style={{
@@ -665,7 +696,7 @@ export function RoomCasualPreJoin() {
               }}>
               <LockIcon color={c.mute2} />
               <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.mute }}>
-                Approximate area · about a 10 min walk
+                Approximate area · about a {room.walkMinutes} min walk
               </Text>
             </View>
           </MapPlate>
@@ -684,29 +715,26 @@ export function RoomCasualPreJoin() {
 
         <View>
           <View style={{ marginBottom: 14 }}>
-            <SectionHead label="WHO'S GOING" right="2 going" />
+            <SectionHead label="WHO'S GOING" right={`${room.attendees.length} going`} />
           </View>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <AvatarCell initials="AT" name="Ade" host onPress={() => go('profile')} />
-            <AvatarCell initials="JC" name="Jos" tone="water" onPress={() => go('profile')} />
-            <SlotCell label="open" />
-            <SlotCell label="open" />
-          </View>
+          <Roster room={room} showOpenSeats />
         </View>
 
-        <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>FROM ADE</Text>
-          <Text
-            style={{
-              fontFamily: font.regular,
-              fontSize: 14.5,
-              lineHeight: 14.5 * 1.5,
-              color: c.ink2,
-              marginTop: 8,
-            }}>
-            Somewhere cheap on Broxton, then whoever's still up can walk over to the ceramics thing.
-          </Text>
-        </View>
+        {room.blurb ? (
+          <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair }}>
+            <Eyebrow>FROM {host.short.toUpperCase()}</Eyebrow>
+            <Text
+              style={{
+                fontFamily: font.regular,
+                fontSize: 14.5,
+                lineHeight: 14.5 * 1.5,
+                color: c.ink2,
+                marginTop: 8,
+              }}>
+              {room.blurb}
+            </Text>
+          </View>
+        ) : null}
       </Body>
 
       <Footer>
@@ -716,30 +744,33 @@ export function RoomCasualPreJoin() {
         </Text>
         {/* Joining is what reveals the exact pin — the joined room is that view. */}
         <PrimaryButton
-          label="Join · 2 seats left"
-          onPress={() => go('room')}
-          style={{ flex: 1 }}
+          label={left ? `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left` : 'Room is full'}
+          onPress={() => left && go('room', { roomId: room.id })}
+          style={{ flex: 1, backgroundColor: left ? c.coral : c.disabled }}
         />
       </Footer>
     </View>
   );
 }
 
-/** Host called it off. No push, no alert colour — you only meet this on open. */
+/** Host called it off. No push, no alert colour — you meet this on opening. */
 export function RoomCanceled() {
   const { c } = useTheme();
-  const { reset, go } = useNav();
+  const { reset } = useNav();
+  const now = useNow();
+  const room = useRoom();
+  const host = hostOf(room);
+  const last = room.updates[0];
+  const alternative = feedFor(you.year, now).find((r) => r.id !== room.id && isLive(r, now));
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <RoomTopBar
-        muted
-        center={<StatusLine label="CANCELED" color={c.mute2} outline />}
-      />
-      <Body
-        contentStyle={{ paddingHorizontal: 22, paddingBottom: 6, gap: 24, flexGrow: 1 }}>
+      <RoomTopBar muted center={<RoomStatus status={{ label: 'CANCELED', tone: 'off' }} />} />
+      <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 6, gap: 24, flexGrow: 1 }}>
         <View>
-          <Text style={[type.display, { color: c.ink2 }]}>Maya called off the sunset set.</Text>
+          <Text style={[type.display, { color: c.ink2 }]}>
+            {host.short} called off the {room.title.split(' ').slice(0, 2).join(' ').toLowerCase()}.
+          </Text>
           <Text
             style={{
               fontFamily: font.regular,
@@ -749,7 +780,8 @@ export function RoomCanceled() {
               marginTop: 10,
               maxWidth: 302,
             }}>
-            Nothing's happening at Lot D tonight. You're off the list — no need to tell anyone.
+            Nothing's happening at {room.street} tonight. You're off the list — no need to tell
+            anyone.
           </Text>
         </View>
 
@@ -762,7 +794,7 @@ export function RoomCanceled() {
             borderColor: c.dash,
             gap: 6,
           }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>WAS SET FOR</Text>
+          <Eyebrow>WAS SET FOR</Eyebrow>
           <Text
             style={{
               fontFamily: font.bold,
@@ -770,53 +802,35 @@ export function RoomCanceled() {
               letterSpacing: em(-0.018, 18),
               color: c.ink2,
             }}>
-            Sunset set on Lot D roof
+            {room.title}
           </Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-            Tonight, 7:15 PM · Lot D rooftop · 14 had joined
+            {room.place} · {room.attendees.length} had joined
           </Text>
         </View>
 
-        <View style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>MAYA'S LAST NOTE</Text>
-          <View style={{ marginTop: 12 }}>
-            <NoteItem
-              text="Roof access got locked for the night — sorry. Trying again Sunday if the weather holds."
-              meta="Maya J · 40 min ago"
-              muted
-            />
+        {last ? (
+          <View style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
+            <Eyebrow>{host.short.toUpperCase()}'S LAST NOTE</Eyebrow>
+            <View style={{ marginTop: 12 }}>
+              <NoteItem text={last.text} meta={`${host.name} · ${ago(last.at, now)}`} muted />
+            </View>
           </View>
-        </View>
+        ) : null}
 
-        <View
-          style={{
-            marginTop: 'auto',
-            paddingTop: 20,
-            borderTopWidth: 1,
-            borderTopColor: c.hair,
-            gap: 14,
-          }}>
-          <Text style={[type.eyebrow, { color: c.mute2 }]}>STILL LIVE NEARBY</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Hedrick lounge, bad movie"
-            onPress={() => go('room')}>
-            <StatusLine label="LIVE · 22M" color={c.green} small />
-            <Text
-              style={{
-                fontFamily: font.bold,
-                fontSize: 17,
-                letterSpacing: em(-0.018, 17),
-                color: c.ink,
-                marginTop: 6,
-              }}>
-              Hedrick lounge, bad movie
-            </Text>
-            <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 3 }}>
-              Hedrick Hall, floor 1 · 3 min · 9 here
-            </Text>
-          </Pressable>
-        </View>
+        {alternative ? (
+          <View
+            style={{
+              marginTop: 'auto',
+              paddingTop: 20,
+              borderTopWidth: 1,
+              borderTopColor: c.hair,
+              gap: 14,
+            }}>
+            <Eyebrow>STILL LIVE NEARBY</Eyebrow>
+            <RoomRowLink room={alternative} now={now} />
+          </View>
+        ) : null}
       </Body>
 
       <Footer column gap={12}>
@@ -829,3 +843,30 @@ export function RoomCanceled() {
     </View>
   );
 }
+
+/** Local alias so the canceled screen doesn't pull in the whole feed module. */
+const RoomRowLink = ({ room, now }: { room: RoomModel; now: Date }) => {
+  const { go } = useNav();
+  const { c } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={room.title}
+      onPress={() => go('room', { roomId: room.id })}>
+      <RoomStatus status={statusOf(room, now)} small />
+      <Text
+        style={{
+          fontFamily: font.bold,
+          fontSize: 17,
+          letterSpacing: em(-0.018, 17),
+          color: c.ink,
+          marginTop: 6,
+        }}>
+        {room.title}
+      </Text>
+      <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 3 }}>
+        {room.place} · {room.walkMinutes} min · {room.attendees.length} here
+      </Text>
+    </Pressable>
+  );
+};

@@ -292,7 +292,7 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
 /** Create, step 2 — when and who. */
 const allYears = ["'27", "'28", "'29", 'Grad'];
 
-export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
+export function CreateStep2() {
   const { c } = useTheme();
   const { back, reset } = useNav();
   const [when, setWhen] = useState('Now');
@@ -460,16 +460,14 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 4 }}>
               Lot D rooftop · {when === 'Now' ? '7:15 PM' : '8:15 PM'} · {cap} seats{previewYears}
             </Text>
-            {peelCorner ? (
-              <PeelCorner
-                size={26}
-                id="peelCreate"
-                surface={c.surface}
-                raised={c.raised}
-                hair={c.hair}
-                hair2={c.hair2}
-              />
-            ) : null}
+            <PeelCorner
+              size={26}
+              id="peelCreate"
+              surface={c.surface}
+              raised={c.raised}
+              hair={c.hair}
+              hair2={c.hair2}
+            />
           </View>
           {/* Approving requests is the only thing that changes where you land. */}
           <PrimaryButton

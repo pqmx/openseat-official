@@ -146,7 +146,6 @@ export const type = {
     lineHeight: 17 * 1.35,
     letterSpacing: em(-0.012, 17),
   } as TextStyle,
-  body: { fontFamily: font.regular, fontSize: 13 } as TextStyle,
 };
 
 export const ThemeContext = createContext<{ c: Colors; scheme: Scheme }>({

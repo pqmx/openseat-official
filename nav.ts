@@ -1,10 +1,9 @@
 import { createContext, useContext } from 'react';
 
-/** Every screen the design mocks. The app is a plain stack over these. */
+/** Every screen the app can show. */
 export type ScreenName =
   | 'discover'
-  | 'discoverEmpty'
-  | 'discoverFreshman'
+  | 'rooms'
   | 'room'
   | 'roomHost'
   | 'roomHostRequests'
@@ -18,16 +17,25 @@ export type ScreenName =
   | 'onboard'
   | 'report';
 
+/** A screen plus what it's showing. */
+export type Route = { screen: ScreenName; roomId?: string; personId?: string };
+
 /**
- * A push/pop stack in `useState` — 15 screens with their own back buttons and
- * no native headers don't earn a navigation library.
+ * A push/pop stack in `useState` — screens draw their own back buttons and
+ * there are no native headers, so a navigation library earns nothing here.
  * ponytail: swap for expo-router when deep links or URLs are needed.
  */
 export const NavContext = createContext<{
-  go: (screen: ScreenName) => void;
+  route: Route;
+  go: (screen: ScreenName, params?: Omit<Route, 'screen'>) => void;
   /** Replaces the stack — for flows you shouldn't be able to back out of. */
-  reset: (screen: ScreenName) => void;
+  reset: (screen: ScreenName, params?: Omit<Route, 'screen'>) => void;
   back: () => void;
-}>({ go: () => {}, reset: () => {}, back: () => {} });
+}>({
+  route: { screen: 'discover' },
+  go: () => {},
+  reset: () => {},
+  back: () => {},
+});
 
 export const useNav = () => useContext(NavContext);
