@@ -21,9 +21,12 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "babel-preset-expo": "^57.0.5",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "postinstall": "patch-package",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
