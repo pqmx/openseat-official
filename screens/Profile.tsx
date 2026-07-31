@@ -2,15 +2,15 @@ import { Pressable, Text, View } from 'react-native';
 import { BackIcon, MenuIcon, MoreIcon } from '../components/icons';
 import { RoomRow } from '../components/rooms';
 import {
+  Avatar,
   Body,
   Chip,
   Eyebrow,
-  ImageSlot,
   PrimaryButton,
   StatusStrip,
   TextButton,
 } from '../components/ui';
-import { hostedBy, useNow, type Person } from '../data';
+import { hostedBy, useNow, you, type Person } from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -63,7 +63,12 @@ export function Profile({ person }: { person: Person }) {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <ImageSlot size={92} placeholder="Portrait" />
+          {/*
+            Initials, not a dashed "Portrait" box. There's no upload path, so a
+            photo slot was a promise the app couldn't keep — and initials are
+            already how a person reads in every roster and feed card.
+          */}
+          <Avatar initials={person.initials} tone={person.tone} size={92} />
           <View style={{ flexShrink: 1 }}>
             <Text style={[name, { color: c.ink }]}>{person.name}</Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 6 }}>
@@ -136,11 +141,12 @@ export function ProfileEmpty() {
       <StatusStrip />
       <Body contentStyle={{ paddingTop: 8, paddingHorizontal: 22, paddingBottom: 24, gap: 22, flexGrow: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <ImageSlot size={92} placeholder="Photo" />
+          <Avatar initials={you.initials} tone={you.tone} size={92} />
           <View style={{ flexShrink: 1 }}>
-            <Text style={[name, { color: c.ink }]}>Maya Jiménez</Text>
+            {/* Read from `you` rather than retyped, so it can't drift from the roster. */}
+            <Text style={[name, { color: c.ink }]}>{you.name}</Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 6 }}>
-              '28 · Architecture
+              {you.year} · {you.major}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.blue, marginTop: 2 }}>
               Verified Bruin · joined today
@@ -163,18 +169,19 @@ export function ProfileEmpty() {
           }}>
           <View>
             <Text style={{ fontFamily: font.medium, fontSize: 14, color: c.ink }}>
-              Two things left
+              One thing left
             </Text>
+            {/* Was "Photo and one prompt" — there are no photos to add now. */}
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 3 }}>
-              Photo and one prompt — 40 seconds
+              One prompt — 20 seconds
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 4 }}>
+            {/* Three steps since the photo one went: name, interests, prompt. */}
             {[
-              { id: 'photo', color: c.green },
-              { id: 'prompt', color: c.green },
-              { id: 'step-3', color: c.hair2 },
-              { id: 'step-4', color: c.hair2 },
+              { id: 'name', color: c.green },
+              { id: 'interests', color: c.green },
+              { id: 'prompt', color: c.hair2 },
             ].map((step) => (
               <View
                 key={step.id}
@@ -218,11 +225,16 @@ export function ProfileEmpty() {
         </View>
 
         <View style={{ marginTop: 'auto', marginBottom: 11, flexDirection: 'row', gap: 10 }}>
-          {/* No prompt editor is designed — finishing the profile starts a room. */}
+          {/*
+            No prompt editor is designed, and the onboarding screen this used to
+            open is gone — sign-in belongs to Google now. So the button says what
+            it actually does, which is what the old comment always claimed:
+            finishing the profile starts a room.
+          */}
           <PrimaryButton
-            label="Answer a prompt"
+            label="Open a room"
             height={44}
-            onPress={() => router.push('/profile-setup')}
+            onPress={() => router.push('/create')}
             style={{ flex: 1 }}
           />
           <Pressable

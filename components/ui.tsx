@@ -227,34 +227,6 @@ export const SlotCell = ({ badge, label }: { badge?: string; label: string }) =>
   );
 };
 
-/**
- * Stand-in for the design's `<image-slot>` — a user-fillable photo placeholder.
- * The web component's drag-to-fill / sidecar persistence is design-tool
- * plumbing with no app equivalent; this is the empty state it renders.
- * ponytail: wire to expo-image-picker when profile photos actually upload.
- */
-export const ImageSlot = ({ size, placeholder }: { size: number; placeholder: string }) => {
-  const { c } = useTheme();
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: radius.round,
-        backgroundColor: c.fill,
-        borderWidth: 1,
-        borderStyle: 'dashed',
-        borderColor: c.dash,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      <Text style={{ fontFamily: font.regular, fontSize: 10.5, color: c.mute2 }}>
-        {placeholder}
-      </Text>
-    </View>
-  );
-};
-
 export const PrimaryButton = ({
   label,
   height = 46,
