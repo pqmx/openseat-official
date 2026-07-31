@@ -27,9 +27,24 @@ const westwood: Region = {
 /** Tight enough to read a building, wide enough to keep its neighbours. */
 const closeDelta = { latitudeDelta: 0.006, longitudeDelta: 0.005 };
 
+/*
+ * Marker geometry. These are constants rather than inline numbers because the
+ * anchor is computed from them: a marker is anchored by fraction, so the only
+ * way to keep the *dot* on the coordinate while a label hangs underneath is to
+ * know exactly how tall the whole thing is. Line heights are set explicitly
+ * for the same reason — a font that measured a pixel taller would slide every
+ * pin off its building.
+ */
+const PIN = { dot: 15, dotSelected: 26, pad: 8, gap: 3, line: 13, cardLine: 15 };
+
+/** Fraction down the marker view where the dot's centre sits. */
+const anchorY = (height: number, dot: number) => (PIN.pad + dot / 2) / height;
+
 /**
- * A pin. Selected, it names its room; otherwise it's a bare dot, so at most
- * one label is ever competing with the map.
+ * A pin. Every room names itself, so you can read the map without tapping
+ * anything — but unselected that name is map typography, not a chip: plain
+ * text on a white halo, the way Apple labels its own places. Only the selected
+ * room earns a card, which is what keeps four labels from reading as clutter.
  */
 const MapPin = ({
   room,
@@ -41,25 +56,27 @@ const MapPin = ({
   onPress: () => void;
 }) => {
   const { c } = useTheme();
-  const size = selected ? 26 : 16;
+  const dot = selected ? PIN.dotSelected : PIN.dot;
+  const label = selected ? PIN.cardLine + PIN.line + 12 : PIN.line;
+  const height = PIN.pad + dot + PIN.gap + label + PIN.pad;
   return (
     <Marker
       coordinate={{ latitude: room.lat, longitude: room.lng }}
-      // The label sits to the right of the dot, so the dot — not the middle of
-      // the whole row — is what lands on the coordinate.
-      anchor={selected ? { x: 0.14, y: 0.5 } : { x: 0.5, y: 0.5 }}
+      // The label hangs below the dot and is centred on it, so x is always the
+      // middle however long the room's name runs.
+      anchor={{ x: 0.5, y: anchorY(height, dot) }}
       zIndex={selected ? 2 : 1}
       onPress={onPress}
       accessibilityLabel={room.title}>
       <View
         // Room to draw the shadow — a marker view clips to its own bounds.
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8 }}
+        style={{ alignItems: 'center', gap: PIN.gap, padding: PIN.pad }}
         accessible
         accessibilityState={{ selected }}>
         <View
           style={{
-            width: size,
-            height: size,
+            width: dot,
+            height: dot,
             borderRadius: radius.round,
             backgroundColor: selected ? c.green : c.blue,
             // The white collar is what reads as an Apple annotation: it holds
@@ -92,14 +109,34 @@ const MapPin = ({
               backgroundColor: c.raised,
               boxShadow: `0px 1px 4px ${c.shadowCol}`,
             }}>
-            <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
+            <Text
+              style={{ fontFamily: font.medium, fontSize: 12.5, lineHeight: PIN.cardLine, color: c.ink }}>
               {room.title.split(',')[0]}
             </Text>
-            <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.mute }}>
+            <Text
+              style={{ fontFamily: font.regular, fontSize: 11, lineHeight: PIN.line, color: c.mute }}>
               {room.attendees.length} here
             </Text>
           </View>
-        ) : null}
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={{
+              fontFamily: font.medium,
+              fontSize: 10.5,
+              lineHeight: PIN.line,
+              color: c.ink2,
+              maxWidth: 104,
+              // A halo rather than a plate: the name sits on the map instead of
+              // on top of it, which is the difference between four labels and
+              // four more things covering the streets.
+              textShadowColor: c.raised,
+              textShadowRadius: 3,
+              textShadowOffset: { width: 0, height: 0 },
+            }}>
+            {room.title.split(',')[0]}
+          </Text>
+        )}
       </View>
     </Marker>
   );
