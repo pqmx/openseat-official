@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { RoomCard, RoomRow, RoomStatus } from '../components/rooms';
-import { Body, Dot, Eyebrow, MapPlate, MapSearchBar, PrimaryButton, TabBar } from '../components/ui';
-import { feedFor, isLive, routeFor, useNow, you, type Room } from '../data';
-import { useNav } from '../nav';
+import { Body, Dot, Eyebrow, MapPlate, MapSearchBar, PrimaryButton } from '../components/ui';
+import { feedFor, isLive, useNow, you, type Room } from '../data';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 const MapLabel = ({ text, color, left, top }: { text: string; color: string; left: number; top: number }) => (
@@ -44,12 +44,11 @@ const MapPin = ({
   top: number;
 }) => {
   const { c } = useTheme();
-  const { go } = useNav();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={room.title}
-      onPress={() => go(routeFor(room), { roomId: room.id })}
+      onPress={() => router.push(`/room/${room.id}`)}
       style={{ position: 'absolute', left: left - 5, top: top - 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Dot color={c.green} size={14} glow={c.greenGlow} />
@@ -180,7 +179,6 @@ const Map = ({ live, now, dimmed }: { live: Room[]; now: Date; dimmed?: boolean 
  */
 export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   const { c } = useTheme();
-  const { go } = useNav();
   const now = useNow();
   const [tab, setTab] = useState('Live');
 
@@ -219,7 +217,7 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
             </Text>
           </View>
 
-          <PrimaryButton label="Open a room" onPress={() => go('create1')} />
+          <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
 
           {upcoming.length ? (
             <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
@@ -238,7 +236,6 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
             </View>
           ) : null}
         </Body>
-        <TabBar active="discover" />
       </View>
     );
   }
@@ -288,7 +285,6 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
           </View>
         )}
       </Body>
-      <TabBar active="discover" />
     </View>
   );
 }

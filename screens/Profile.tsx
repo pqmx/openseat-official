@@ -8,11 +8,10 @@ import {
   ImageSlot,
   PrimaryButton,
   StatusStrip,
-  TabBar,
   TextButton,
 } from '../components/ui';
-import { hostedBy, personById, useNow, you } from '../data';
-import { useNav } from '../nav';
+import { hostedBy, useNow, type Person } from '../data';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** 25px name — only the two profile screens use it. */
@@ -36,11 +35,9 @@ const Prompt = ({ label, answer, placeholder }: { label: string; answer: string;
 };
 
 /** Someone else's profile. */
-export function Profile() {
+export function Profile({ person }: { person: Person }) {
   const { c } = useTheme();
-  const { route, back, go } = useNav();
   const now = useNow();
-  const person = personById(route.personId ?? '') ?? you;
   const hosts = hostedBy(person.id, now);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -53,13 +50,13 @@ export function Profile() {
             justifyContent: 'space-between',
             marginBottom: -6,
           }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} hitSlop={10}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
             <BackIcon color={c.ink} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="More"
-            onPress={() => go('report')}
+            onPress={() => router.push('/report')}
             hitSlop={10}>
             <MoreIcon color={c.ink} />
           </Pressable>
@@ -122,12 +119,11 @@ export function Profile() {
           </Text>
           <TextButton
             label="Report or block"
-            onPress={() => go('report')}
+            onPress={() => router.push('/report')}
             style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}
           />
         </View>
       </Body>
-      <TabBar active="you" />
     </View>
   );
 }
@@ -135,7 +131,6 @@ export function Profile() {
 /** Your own profile the day you sign up — nothing filled in yet. */
 export function ProfileEmpty() {
   const { c } = useTheme();
-  const { go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -222,13 +217,13 @@ export function ProfileEmpty() {
           <PrimaryButton
             label="Answer a prompt"
             height={44}
-            onPress={() => go('onboard')}
+            onPress={() => router.push('/profile-setup')}
             style={{ flex: 1 }}
           />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Settings"
-            onPress={() => go('report')}
+            onPress={() => router.push('/report')}
             style={{
               width: 44,
               height: 44,
@@ -242,7 +237,6 @@ export function ProfileEmpty() {
           </Pressable>
         </View>
       </Body>
-      <TabBar active="you" />
     </View>
   );
 }

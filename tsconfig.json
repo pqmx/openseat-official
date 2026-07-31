@@ -1,8 +1,21 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // The `.check.ts` files run under plain node, which wants the extension.
+    // Metro resolves it too, so one spelling works in both.
+    "allowImportingTsExtensions": true
   },
-  // Run by node, not bundled — `npm run check`.
-  "exclude": ["time.check.ts"]
+  // Run by node, not bundled — `npm run check`. Excluded because they import
+  // `node:assert`, and @types/node isn't worth installing for two files.
+  "exclude": [
+    "time.check.ts",
+    "data.check.ts"
+  ],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }

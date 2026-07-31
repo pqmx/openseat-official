@@ -12,7 +12,7 @@ import {
   TextButton,
   YearChip,
 } from '../components/ui';
-import { useNav } from '../nav';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Two 22px rules; the second fills on step 2. */
@@ -29,7 +29,6 @@ const Progress = ({ step }: { step: 1 | 2 }) => {
 /** Onboarding step 1 — Google sign-in doubles as UCLA verification. */
 export function OnboardingSignIn() {
   const { c } = useTheme();
-  const { go } = useNav();
   const bullet = (color: string, text: string) => (
     <View key={text} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
       <Dot color={color} />
@@ -81,7 +80,7 @@ export function OnboardingSignIn() {
 
       <View style={{ paddingTop: 14, paddingHorizontal: 22, paddingBottom: 28, gap: 16 }}>
         {/* ponytail: swap for expo-auth-session Google sign-in when there's a backend. */}
-        <PrimaryButton label="Continue with Google" height={50} onPress={() => go('onboard')}>
+        <PrimaryButton label="Continue with Google" height={50} onPress={() => router.push('/profile-setup')}>
           <View
             style={{
               width: 22,
@@ -101,7 +100,7 @@ export function OnboardingSignIn() {
           </Text>
           <TextButton
             label="See what openseat is"
-            onPress={() => go('discover')}
+            onPress={() => router.replace('/discover')}
             style={{ fontFamily: font.regular, fontSize: 12.5, color: c.blue }}
           />
         </View>
@@ -124,7 +123,6 @@ export function OnboardingSignIn() {
 /** Onboarding step 2 — the four things a profile needs to exist. */
 export function OnboardingProfile() {
   const { c } = useTheme();
-  const { back, reset } = useNav();
   const [name, setName] = useState('Maya Jiménez');
   const [year, setYear] = useState("'28");
   return (
@@ -133,7 +131,7 @@ export function OnboardingProfile() {
       <Body contentStyle={{ paddingTop: 24, paddingHorizontal: 22, gap: 26 }}>
         <View
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} hitSlop={10}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
             <BackIcon color={c.ink} />
           </Pressable>
           <Progress step={2} />
@@ -206,7 +204,7 @@ export function OnboardingProfile() {
       </Body>
 
       <View style={{ paddingTop: 14, paddingHorizontal: 22, paddingBottom: 28, gap: 12 }}>
-        <PrimaryButton label="Enter openseat" onPress={() => reset('discover')} />
+        <PrimaryButton label="Enter openseat" onPress={() => router.replace('/discover')} />
         <Text
           style={{
             fontFamily: font.regular,

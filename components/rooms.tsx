@@ -1,15 +1,6 @@
 import { Pressable, Text, View } from 'react-native';
-import {
-  hostOf,
-  metaOf,
-  rosterOf,
-  routeFor,
-  seatsLeft,
-  statusOf,
-  type Room,
-  type Status,
-} from '../data';
-import { useNav } from '../nav';
+import { hostOf, metaOf, rosterOf, seatsLeft, statusOf, type Room, type Status } from '../data';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 import { PeelCorner } from './icons';
 import { Avatar, PrimaryButton, StatusLine } from './ui';
@@ -58,8 +49,7 @@ const AvatarStack = ({ room }: { room: Room }) => {
 /** The raised, peeling hero card at the top of a feed. */
 export const RoomCard = ({ room, now }: { room: Room; now: Date }) => {
   const { c } = useTheme();
-  const { go } = useNav();
-  const open = () => go(routeFor(room), { roomId: room.id });
+  const open = () => router.push(`/room/${room.id}`);
   const full = seatsLeft(room) === 0;
   return (
     <Pressable
@@ -126,12 +116,11 @@ export const RoomRow = ({
   right?: string;
 }) => {
   const { c } = useTheme();
-  const { go } = useNav();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={room.title}
-      onPress={() => go(routeFor(room), { roomId: room.id })}
+      onPress={() => router.push(`/room/${room.id}`)}
       style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
       <View style={{ flex: 1 }}>
         <RoomStatus status={statusOf(room, now)} small={small} />

@@ -1,14 +1,13 @@
 import { Text, View } from 'react-native';
 import { RoomList } from '../components/rooms';
-import { Body, Eyebrow, PrimaryButton, StatusStrip, TabBar } from '../components/ui';
+import { Body, Eyebrow, PrimaryButton, StatusStrip } from '../components/ui';
 import { isHost, isLive, myRooms, useNow } from '../data';
-import { useNav } from '../nav';
+import { router } from 'expo-router';
 import { font, type, useTheme } from '../theme';
 
 /** The Rooms tab — what you're hosting and what you've joined. */
 export function Rooms() {
   const { c } = useTheme();
-  const { go } = useNav();
   const now = useNow();
   const mine = myRooms(now);
   const hosting = mine.filter((r) => isHost(r));
@@ -49,10 +48,9 @@ export function Rooms() {
         ) : null}
 
         <View style={{ marginTop: 'auto', paddingTop: 20 }}>
-          <PrimaryButton label="Open a room" onPress={() => go('create1')} />
+          <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
         </View>
       </Body>
-      <TabBar active="rooms" />
     </View>
   );
 }

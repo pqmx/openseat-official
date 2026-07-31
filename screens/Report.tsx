@@ -9,7 +9,7 @@ import {
   TextButton,
   Toggle,
 } from '../components/ui';
-import { useNav } from '../nav';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 const Reason = ({
@@ -72,7 +72,6 @@ const reasons = [
  */
 export function ReportSheet() {
   const { c } = useTheme();
-  const { back } = useNav();
   const [reason, setReason] = useState(reasons[0].label);
   const [detail, setDetail] = useState('');
   const [block, setBlock] = useState(false);
@@ -174,7 +173,7 @@ export function ReportSheet() {
 
           <View style={{ gap: 14 }}>
             {/* ponytail: POSTs to the safety team once there's an API; back for now. */}
-            <PrimaryButton label="Submit report" danger onPress={back} />
+            <PrimaryButton label="Submit report" danger onPress={() => router.back()} />
             <View
               style={{
                 flexDirection: 'row',
@@ -197,7 +196,7 @@ export function ReportSheet() {
             </View>
             <TextButton
               label="Cancel"
-              onPress={back}
+              onPress={() => router.back()}
               style={{
                 fontFamily: font.regular,
                 fontSize: 13.5,

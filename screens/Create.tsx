@@ -13,7 +13,7 @@ import {
   Toggle,
   YearChip,
 } from '../components/ui';
-import { useNav } from '../nav';
+import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Cancel / STEP n / 2 / action — the bar on both create steps. */
@@ -128,7 +128,6 @@ const customPin: Place = { title: 'Drop a custom pin', sub: 'Place it on the map
 
 export function CreateStep1() {
   const { c } = useTheme();
-  const { go, back } = useNav();
   const [title, setTitle] = useState('Sunset set on Lot D roof');
   const [description, setDescription] = useState(
     "Bringing the speaker + a blanket. Golden hour til it's dark, then we walk for pizza."
@@ -138,7 +137,7 @@ export function CreateStep1() {
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Cancel" step="STEP 1 / 2" right="Next" onLeft={back} />
+      <WizardBar left="Cancel" step="STEP 1 / 2" right="Next" onLeft={() => router.back()} />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 26 }}>
         <Text style={[type.display, { color: c.ink }]}>
           Open a seat.{'\n'}What's happening?
@@ -221,7 +220,7 @@ export function CreateStep1() {
         <PrimaryButton
           label="Next: when & who"
           height={44}
-          onPress={() => go('create2')}
+          onPress={() => router.push('/create/details')}
           style={{ flex: 1 }}
         />
       </Footer>
@@ -294,7 +293,6 @@ const allYears = ["'27", "'28", "'29", 'Grad'];
 
 export function CreateStep2() {
   const { c } = useTheme();
-  const { back, reset } = useNav();
   const [when, setWhen] = useState('Now');
   const [cap, setCap] = useState(18);
   const [approve, setApprove] = useState(false);
@@ -307,7 +305,7 @@ export function CreateStep2() {
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Back" step="STEP 2 / 2" right="Draft" onLeft={back} />
+      <WizardBar left="Back" step="STEP 2 / 2" right="Draft" onLeft={() => router.back()} />
       <Body contentStyle={{ paddingHorizontal: 22, gap: 18, flexGrow: 1 }}>
         <Text style={[type.display, { color: c.ink }]}>When does the{'\n'}room go live?</Text>
 
@@ -472,7 +470,10 @@ export function CreateStep2() {
           {/* Approving requests is the only thing that changes where you land. */}
           <PrimaryButton
             label="Open the room"
-            onPress={() => reset(approve ? 'roomHostRequests' : 'roomHost')}
+            // Nothing persists yet, so the new room falls back to a fixture.
+            onPress={() =>
+              router.replace(`/room/new?view=${approve ? 'requests' : 'host'}`)
+            }
           />
         </View>
       </Body>

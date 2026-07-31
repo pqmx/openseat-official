@@ -21,7 +21,6 @@ import {
   hostOf,
   isLive,
   personById,
-  roomById,
   rosterOf,
   seatsLeft,
   statusOf,
@@ -31,15 +30,9 @@ import {
   type Room as RoomModel,
   type Update,
 } from '../data';
-import { useNav } from '../nav';
+import { router } from 'expo-router';
 import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
-
-/** The room this screen is showing. Falls back to the flagship fixture. */
-const useRoom = (fallback = 'sunset') => {
-  const { route } = useNav();
-  return roomById(route.roomId ?? fallback);
-};
 
 const RoomTopBar = ({
   center,
@@ -51,7 +44,6 @@ const RoomTopBar = ({
   paddingBottom?: number;
 }) => {
   const { c } = useTheme();
-  const { back, go } = useNav();
   return (
     <View
       style={{
@@ -62,7 +54,7 @@ const RoomTopBar = ({
         paddingHorizontal: 22,
         paddingBottom,
       }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} hitSlop={10}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
         <BackIcon color={c.ink} />
       </Pressable>
       {center}
@@ -70,7 +62,7 @@ const RoomTopBar = ({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="More"
-        onPress={() => go('report')}
+        onPress={() => router.push('/report')}
         hitSlop={10}>
         <MoreIcon color={muted ? c.mute2 : c.ink} />
       </Pressable>
@@ -134,7 +126,6 @@ const Roster = ({
   shown?: number;
   showOpenSeats?: boolean;
 }) => {
-  const { go } = useNav();
   const named = [...rosterOf(room), ...extra].slice(0, shown);
   const unnamed = room.attendees.length + extra.length - named.length;
   const open = seatsLeft(room) - extra.length;
@@ -147,7 +138,7 @@ const Roster = ({
           name={p.id === you.id ? 'You' : p.short}
           tone={p.tone}
           host={p.id === room.hostId}
-          onPress={() => go(p.id === you.id ? 'profileEmpty' : 'profile', { personId: p.id })}
+          onPress={() => router.push(p.id === you.id ? '/you' : `/profile/${p.id}`)}
         />
       ))}
       {showOpenSeats
@@ -268,11 +259,9 @@ const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label:
 };
 
 /** Live room, member view. */
-export function Room() {
+export function Room({ room }: { room: RoomModel }) {
   const { c } = useTheme();
-  const { reset } = useNav();
   const now = useNow();
-  const room = useRoom();
   const host = hostOf(room);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -322,7 +311,7 @@ export function Room() {
         </View>
         <TextButton
           label="Leave room"
-          onPress={() => reset('discover')}
+          onPress={() => router.replace('/discover')}
           style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}
         />
       </Footer>
@@ -331,11 +320,9 @@ export function Room() {
 }
 
 /** Live room, host view — stats, roster, and the host-only composer. */
-export function RoomHost() {
+export function RoomHost({ room }: { room: RoomModel }) {
   const { c } = useTheme();
-  const { reset } = useNav();
   const now = useNow();
-  const room = useRoom();
   const [draft, setDraft] = useState('');
   const [updates, setUpdates] = useState(room.updates);
   const post = () => {
@@ -397,7 +384,7 @@ export function RoomHost() {
               label="End room"
               color={c.danger}
               style={{ paddingVertical: 6 }}
-              onPress={() => reset('roomCanceled', { roomId: room.id })}
+              onPress={() => router.replace(`/room/${room.id}?view=canceled`)}
             />
           </View>
         </View>
@@ -462,11 +449,9 @@ export function RoomHost() {
 }
 
 /** Locked room, host view — the approve/decline queue. */
-export function RoomHostRequests() {
+export function RoomHostRequests({ room }: { room: RoomModel }) {
   const { c } = useTheme();
-  const { go } = useNav();
   const now = useNow();
-  const room = useRoom('studio');
   const [waiting, setWaiting] = useState(room.requests);
   const [approved, setApproved] = useState<Person[]>([]);
   const decide = (id: string, approve: boolean) => {
@@ -589,7 +574,7 @@ export function RoomHostRequests() {
         </Text>
         <PrimaryButton
           label="Post an update"
-          onPress={() => go('roomHost', { roomId: room.id })}
+          onPress={() => router.replace(`/room/${room.id}?view=host`)}
           style={{ flex: 1 }}
         />
       </Footer>
@@ -601,11 +586,9 @@ export function RoomHostRequests() {
  * Casual room before joining. Small rooms keep their pin private — the map
  * shows an approximate area until you're in.
  */
-export function RoomCasualPreJoin() {
+export function RoomCasualPreJoin({ room }: { room: RoomModel }) {
   const { c } = useTheme();
-  const { go } = useNav();
   const now = useNow();
-  const room = useRoom('dinner');
   const host = hostOf(room);
   const left = seatsLeft(room);
   return (
@@ -745,7 +728,7 @@ export function RoomCasualPreJoin() {
         {/* Joining is what reveals the exact pin — the joined room is that view. */}
         <PrimaryButton
           label={left ? `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left` : 'Room is full'}
-          onPress={() => left && go('room', { roomId: room.id })}
+          onPress={() => left && router.replace(`/room/${room.id}?view=member`)}
           style={{ flex: 1, backgroundColor: left ? c.coral : c.disabled }}
         />
       </Footer>
@@ -754,11 +737,9 @@ export function RoomCasualPreJoin() {
 }
 
 /** Host called it off. No push, no alert colour — you meet this on opening. */
-export function RoomCanceled() {
+export function RoomCanceled({ room }: { room: RoomModel }) {
   const { c } = useTheme();
-  const { reset } = useNav();
   const now = useNow();
-  const room = useRoom();
   const host = hostOf(room);
   const last = room.updates[0];
   const alternative = feedFor(you.year, now).find((r) => r.id !== room.id && isLive(r, now));
@@ -834,7 +815,7 @@ export function RoomCanceled() {
       </Body>
 
       <Footer column gap={12}>
-        <PrimaryButton label="Back to Discover" onPress={() => reset('discover')} />
+        <PrimaryButton label="Back to Discover" onPress={() => router.replace('/discover')} />
         <Text
           style={{ fontFamily: font.regular, fontSize: 12.5, color: c.faint, textAlign: 'center' }}>
           This room is closed for good
@@ -846,13 +827,12 @@ export function RoomCanceled() {
 
 /** Local alias so the canceled screen doesn't pull in the whole feed module. */
 const RoomRowLink = ({ room, now }: { room: RoomModel; now: Date }) => {
-  const { go } = useNav();
   const { c } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={room.title}
-      onPress={() => go('room', { roomId: room.id })}>
+      onPress={() => router.push(`/room/${room.id}`)}>
       <RoomStatus status={statusOf(room, now)} small />
       <Text
         style={{

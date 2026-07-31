@@ -1,7 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import {
-  Animated,
-  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,8 +9,16 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import type { Tone } from '../data';
-import { useNav } from '../nav';
+import { router, usePathname } from 'expo-router';
 import { font, radius, type, useTheme, type Colors } from '../theme';
 import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon, SearchIcon } from './icons';
 
@@ -66,36 +72,23 @@ export const Dot = ({
 
 /** `@keyframes osPulse` — 2.4s, opacity 1 -> .3 -> 1. */
 const PulseDot = ({ color, size = 6 }: { color: string; size?: number }) => {
-  const v = useRef(new Animated.Value(1)).current;
+  const v = useSharedValue(1);
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(v, {
-          toValue: 0.3,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(v, {
-          toValue: 1,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
+    v.value = withRepeat(
+      withSequence(
+        withTiming(0.3, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1
     );
-    loop.start();
-    return () => loop.stop();
   }, [v]);
+  const style = useAnimatedStyle(() => ({ opacity: v.value }));
   return (
     <Animated.View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: radius.round,
-        backgroundColor: color,
-        opacity: v,
-      }}
+      style={[
+        { width: size, height: size, borderRadius: radius.round, backgroundColor: color },
+        style,
+      ]}
     />
   );
 };
@@ -613,16 +606,18 @@ export const MapSearchBar = () => {
   );
 };
 
-export type Tab = 'discover' | 'rooms' | 'you';
-
 /**
  * Four equal slots. The design floated the create button between the third
  * and fourth tab, which lands it off-centre and reading as misplaced; giving
  * it a slot and a label of its own makes the row even and says what it does.
+ *
+ * Rendered once, by app/(tabs)/_layout.tsx — the active slot comes from the
+ * URL, so nothing has to pass it down.
  */
-export const TabBar = ({ active }: { active: Tab }) => {
+export const TabBar = () => {
   const { c } = useTheme();
-  const { reset, go } = useNav();
+  const path = usePathname();
+  const active = path.startsWith('/rooms') ? 'rooms' : path.startsWith('/discover') ? 'discover' : 'you';
   const slot = (
     label: string,
     selected: boolean,
@@ -647,7 +642,7 @@ export const TabBar = ({ active }: { active: Tab }) => {
       </Text>
     </Pressable>
   );
-  const tint = (t: Tab) => (t === active ? c.ink : c.faint);
+  const tint = (t: string) => (t === active ? c.ink : c.faint);
   return (
     <View
       style={{
@@ -661,9 +656,11 @@ export const TabBar = ({ active }: { active: Tab }) => {
         paddingBottom: 16,
       }}>
       {slot('Discover', active === 'discover', <HomeIcon color={tint('discover')} />, () =>
-        reset('discover')
+        router.navigate('/discover')
       )}
-      {slot('Rooms', active === 'rooms', <ClockIcon color={tint('rooms')} />, () => reset('rooms'))}
+      {slot('Rooms', active === 'rooms', <ClockIcon color={tint('rooms')} />, () =>
+        router.navigate('/rooms')
+      )}
       {slot(
         'New',
         false,
@@ -678,10 +675,10 @@ export const TabBar = ({ active }: { active: Tab }) => {
           }}>
           <PlusIcon size={16} color={c.onCoral} />
         </View>,
-        () => go('create1')
+        () => router.push('/create')
       )}
       {slot('You', active === 'you', <PersonIcon color={tint('you')} />, () =>
-        reset('profileEmpty')
+        router.navigate('/you')
       )}
     </View>
   );

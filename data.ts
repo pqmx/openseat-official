@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ScreenName } from './nav';
-import { elapsed, when } from './time';
+// `.ts` so node can run data.check.ts unbundled, same as time.check.ts.
+import { elapsed, when } from './time.ts';
 
 /**
  * The app's data, in the shape a room API would return it. Screens read from
@@ -316,16 +316,21 @@ export const metaOf = (room: Room, now: Date) =>
       : `${room.attendees.length} of ${room.capacity} seats`,
   ].join(' · ');
 
+/** The five ways `/room/[id]` can draw itself. */
+export type RoomView = 'member' | 'host' | 'requests' | 'casual' | 'canceled';
+
 /**
- * Which room screen a tap opens. The design draws five of them and the
+ * Which of the five a room opens as. The design draws five screens and the
  * difference is entirely who you are to the room, so decide it in one place.
+ * `?view=` overrides it for transitions the fixtures can't express (ending a
+ * room, joining one) — see app/room/[id].tsx.
  */
-export const routeFor = (room: Room): ScreenName => {
-  if (room.canceledAt) return 'roomCanceled';
-  if (isHost(room)) return room.access === 'approve' ? 'roomHostRequests' : 'roomHost';
-  if (room.attendees.includes(you.id)) return 'room';
+export const viewOf = (room: Room): RoomView => {
+  if (room.canceledAt) return 'canceled';
+  if (isHost(room)) return room.access === 'approve' ? 'requests' : 'host';
+  if (room.attendees.includes(you.id)) return 'member';
   // Casual rooms hide their pin until you're in, so non-members get that view.
-  return room.casual ? 'roomCasual' : 'room';
+  return room.casual ? 'casual' : 'member';
 };
 
 /** Rooms you host or have joined, live first — the Rooms tab. */
