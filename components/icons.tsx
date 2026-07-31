@@ -84,12 +84,6 @@ export const PinIcon = ({ size = 14, color }: IconProps) => (
   </Svg>
 );
 
-export const ChevronDownIcon = ({ size = 14, color }: IconProps) => (
-  <Svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-    <Path d="M3.5 5.5L7 9l3.5-3.5" strokeWidth={1.4} strokeLinecap="round" stroke={color} />
-  </Svg>
-);
-
 export const MenuIcon = ({ size = 16, color }: IconProps) => (
   <Svg width={size} height={size} viewBox="0 0 19 19" fill="none">
     <Path d="M3 5.5h13M3 9.5h13M3 13.5h8" strokeWidth={1.4} strokeLinecap="round" stroke={color} />

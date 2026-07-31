@@ -537,7 +537,7 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
       setSelectedId(id);
       center(room);
     },
-    [center, live, selectedId]
+    [center, live]
   );
 
   if (live.length === 0) {
