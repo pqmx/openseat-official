@@ -1,11 +1,20 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
-import { RoomCard, RoomRow, RoomStatus } from '../components/rooms';
+import { RoomCard, RoomPreview, RoomRow, RoomStatus } from '../components/rooms';
 import { BottomSheet } from '../components/sheet';
-import { Eyebrow, MapSearchBar, PrimaryButton } from '../components/ui';
-import { feedFor, isLive, useNow, you, type Room } from '../data';
+import { Eyebrow, MapSearchBar, PrimaryButton, Toggle } from '../components/ui';
+import {
+  feedFor,
+  isLive,
+  matchesQuery,
+  showsExactPin,
+  useNow,
+  you,
+  type Query,
+  type Room,
+} from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -181,6 +190,136 @@ const FeedTabs = ({ active, onChange }: { active: string; onChange: (t: string) 
   );
 };
 
+/** The walk-time limits the filter panel offers. */
+const walkLimits = [5, 10, 20];
+
+/**
+ * The filter panel, dropped under the search bar. Deliberately does not offer a
+ * time window — `FeedTabs` already owns that, and two controls for one axis is
+ * how filter UIs start lying to people.
+ */
+const Filters = ({
+  query,
+  onChange,
+  onClose,
+}: {
+  query: Query;
+  onChange: (q: Query) => void;
+  onClose: () => void;
+}) => {
+  const { c } = useTheme();
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        top: 110,
+        left: 20,
+        right: 20,
+        padding: 16,
+        gap: 14,
+        borderRadius: radius.card,
+        backgroundColor: c.surface94,
+        borderWidth: 1,
+        borderColor: c.frame,
+        boxShadow: `0px 4px 16px ${c.shadowCol}`,
+      }}>
+      <View style={{ gap: 8 }}>
+        <Eyebrow>WITHIN A WALK OF</Eyebrow>
+        <View style={{ flexDirection: 'row', gap: 7 }}>
+          {walkLimits.map((m) => {
+            const on = query.maxWalk === m;
+            return (
+              <Pressable
+                key={m}
+                accessibilityRole="button"
+                accessibilityLabel={`${m} minutes or less`}
+                accessibilityState={{ selected: on }}
+                onPress={() => onChange({ ...query, maxWalk: on ? undefined : m })}
+                style={{
+                  paddingVertical: 7,
+                  paddingHorizontal: 12,
+                  borderRadius: radius.chip,
+                  backgroundColor: on ? c.ink : 'transparent',
+                  borderWidth: 1,
+                  borderColor: on ? c.ink : c.hair2,
+                }}>
+                <Text
+                  style={{
+                    fontFamily: font.medium,
+                    fontSize: 12.5,
+                    color: on ? c.surface : c.ink2,
+                  }}>
+                  {m} min
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityLabel="Only rooms with a seat"
+        accessibilityState={{ checked: !!query.openOnly }}
+        onPress={() => onChange({ ...query, openOnly: !query.openOnly })}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.ink }}>
+          Only rooms with a seat
+        </Text>
+        {/*
+          The row is the switch. `Toggle` is a switch in its own right when it
+          gets an `onPress`, so handing it one here would put two controls on
+          one setting — the screen reader would find both. It stays a picture.
+        */}
+        <View pointerEvents="none" importantForAccessibility="no-hide-descendants">
+          <Toggle on={!!query.openOnly} />
+        </View>
+      </Pressable>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Clear filters" onPress={() => onChange({})}>
+          <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}>Clear</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close filters" onPress={onClose}>
+          <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.coral }}>Done</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+};
+
+/**
+ * Search and filters, floating over the map. A module-level component, not one
+ * built inside `Discover` — a component declared during render is a new type
+ * every render, which would remount the search field and swallow every second
+ * keystroke.
+ */
+const MapControls = ({
+  query,
+  onQuery,
+  narrowed,
+  open,
+  onToggle,
+  onClose,
+}: {
+  query: Query;
+  onQuery: (q: Query) => void;
+  narrowed: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}) => (
+  <>
+    <MapSearchBar
+      text={query.text ?? ''}
+      onText={(text) => onQuery({ ...query, text })}
+      filtersOn={narrowed}
+      onFilters={onToggle}
+    />
+    {open ? <Filters query={query} onChange={onQuery} onClose={onClose} /> : null}
+  </>
+);
+
 /** Same day as `now`, so "Tonight" means tonight. */
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
@@ -200,18 +339,33 @@ const Map = ({
   live,
   selectedId,
   onSelect,
+  onClear,
   mapRef,
+  children,
 }: {
   live: Room[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onClear: () => void;
   mapRef: React.RefObject<MapView | null>;
-}) => (
+  children?: React.ReactNode;
+}) => {
+  const { c } = useTheme();
+  return (
   <View style={StyleSheet.absoluteFill}>
     <MapView
       ref={mapRef}
       style={StyleSheet.absoluteFill}
       initialRegion={westwood}
+      /*
+       * Tapping the map itself puts the preview away — but a tap on one of our
+       * marker views bubbles up to the map too, so without the guard selecting
+       * a pin immediately deselected it. The camera still flew, which made it
+       * look like the preview simply never opened.
+       */
+      onPress={(e) => {
+        if (e.nativeEvent.action !== 'marker-press') onClear();
+      }}
       showsUserLocation={false}
       showsMyLocationButton={false}
       showsCompass={false}
@@ -231,18 +385,35 @@ const Map = ({
        * would re-render the map mid-drag and shove the camera around.
        */
       mapPadding={{ top: 0, right: 0, bottom: 380, left: 0 }}>
-      {live.map((room) => (
-        <MapPin
-          key={room.id}
-          room={room}
-          selected={room.id === selectedId}
-          onPress={() => onSelect(room.id)}
-        />
-      ))}
+      {live.map((room) =>
+        showsExactPin(room) ? (
+          <MapPin
+            key={room.id}
+            room={room}
+            selected={room.id === selectedId}
+            onPress={() => onSelect(room.id)}
+          />
+        ) : (
+          /*
+           * A casual room you haven't joined is discoverable but not findable:
+           * `showsExactPin` is the same rule that sends you to the pre-join
+           * screen, so the map can't contradict it. The room still appears in
+           * the list — only the address is withheld.
+           */
+          <Circle
+            key={room.id}
+            center={{ latitude: room.lat, longitude: room.lng }}
+            radius={150}
+            strokeColor={c.blue}
+            strokeWidth={1}
+            fillColor={c.greenGlow}
+          />
+        )
+      )}
     </MapView>
-    <MapSearchBar />
   </View>
-);
+  );
+};
 
 /**
  * One room in the sheet. `box-only` is the point: `RoomCard` and `RoomRow` are
@@ -293,15 +464,38 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   const [tab, setTab] = useState('Live');
   const [index, setIndex] = useState(HALF);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState<Query>({});
+  const [showFilters, setShowFilters] = useState(false);
+  const narrowed = query.maxWalk !== undefined || !!query.openOnly;
+  /** Whether an empty feed is something you did, or just a quiet night. */
+  const searching = narrowed || !!query.text?.trim();
 
   const listRef = useAnimatedRef<Animated.ScrollView>();
   const mapRef = useRef<MapView | null>(null);
   const rowY = useRef<Record<string, number>>({});
 
-  const feed = feedFor(viewerYear, now);
+  // The query narrows everything at once — map pins, the count and the list —
+  // so the map can never show a room the list is hiding.
+  const feed = feedFor(viewerYear, now).filter((r) => matchesQuery(r, query));
   const live = feed.filter((r) => isLive(r, now));
   const upcoming = feed.filter((r) => !isLive(r, now));
   const shown = filterFeed(feed, tab, now);
+  // Derived, not stored: a selected room that drops out of the feed — it ends,
+  // or the year filter changes — stops being selected on its own.
+  const selected = live.find((r) => r.id === selectedId) ?? null;
+
+  const clear = useCallback(() => setSelectedId(null), []);
+
+  const controls = (
+    <MapControls
+      query={query}
+      onQuery={setQuery}
+      narrowed={narrowed}
+      open={showFilters}
+      onToggle={() => setShowFilters((v) => !v)}
+      onClose={() => setShowFilters(false)}
+    />
+  );
 
   /** Flies the camera to a room's pin; `mapPadding` keeps it clear of the sheet. */
   const center = useCallback((room: Room) => {
@@ -326,15 +520,17 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   );
 
   /**
-   * A row: the first tap selects and centres, the second opens the room. One
-   * tap can't both move the map and navigate away from it. A room with no pin
-   * — anything in Tonight or This week — has nothing to centre on, so it skips
-   * straight to opening rather than charging a tap for no visible change.
+   * A row: select it, and let the preview do the talking. This used to open the
+   * room on a second tap, which meant the first tap cost you something and told
+   * you nothing. Now one tap answers the question and the preview's button is
+   * the only thing that navigates.
    */
   const fromRow = useCallback(
     (id: string) => {
       const room = live.find((r) => r.id === id);
-      if (selectedId === id || !room) {
+      // Nothing in Tonight or This week has a pin to fly to, so those go
+      // straight through to the room rather than selecting nothing visible.
+      if (!room) {
         router.push(`/room/${id}`);
         return;
       }
@@ -347,7 +543,14 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   if (live.length === 0) {
     return (
       <View style={{ flex: 1, backgroundColor: c.surface }}>
-        <Map live={[]} selectedId={null} onSelect={fromPin} mapRef={mapRef} />
+        <Map
+          live={[]}
+          selectedId={null}
+          onSelect={fromPin}
+          onClear={clear}
+          mapRef={mapRef}
+        />
+        {controls}
         <BottomSheet
           index={index}
           onIndexChange={setIndex}
@@ -355,7 +558,12 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
           listRef={listRef}
           header={
             <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14 }}>
-              <RoomStatus status={{ label: 'NOTHING LIVE WITHIN 15 MIN', tone: 'off' }} />
+              <RoomStatus
+                status={{
+                  label: searching ? 'NOTHING MATCHES' : 'NOTHING LIVE WITHIN 15 MIN',
+                  tone: 'off',
+                }}
+              />
             </View>
           }
           contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 22 }}>
@@ -365,7 +573,8 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
                 type.display,
                 { fontSize: 24, lineHeight: 24 * 1.2, letterSpacing: em(-0.022, 24), color: c.ink },
               ]}>
-              Quiet out there.{'\n'}Tuesdays usually are.
+              {/* An empty result you caused reads differently from a quiet night. */}
+              {searching ? 'No rooms match\nthat search.' : 'Quiet out there.\nTuesdays usually are.'}
             </Text>
             <Text
               style={{
@@ -376,12 +585,17 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
                 marginTop: 10,
                 maxWidth: 300,
               }}>
-              31 rooms opened near campus last week. A blanket and a speaker is a room — takes about
-              forty seconds.
+              {searching
+                ? 'Try a shorter search, a longer walk, or open a room of your own.'
+                : '31 rooms opened near campus last week. A blanket and a speaker is a room — takes about forty seconds.'}
             </Text>
           </View>
 
-          <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
+          {searching ? (
+            <PrimaryButton label="Clear search" onPress={() => setQuery({})} />
+          ) : (
+            <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
+          )}
 
           {upcoming.length ? (
             <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
@@ -406,34 +620,70 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <Map live={live} selectedId={selectedId} onSelect={fromPin} mapRef={mapRef} />
+      <Map
+        live={live}
+        selectedId={selectedId}
+        onSelect={fromPin}
+        onClear={clear}
+        mapRef={mapRef}
+      />
+      {controls}
       <BottomSheet
         index={index}
         onIndexChange={setIndex}
         detents={detents}
         listRef={listRef}
         header={
-          <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14, gap: 14 }}>
+          selected ? (
+            // Selected, the header names the room instead of counting rooms —
+            // the count is what you needed before you picked one.
             <View
-              style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <Text
-                style={{
-                  fontFamily: font.bold,
-                  fontSize: 17,
-                  letterSpacing: em(-0.015, 17),
-                  color: c.ink,
-                }}>
-                {live.length} {live.length === 1 ? 'room' : 'rooms'} live nearby
-              </Text>
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 22,
+                paddingTop: 6,
+                paddingBottom: 14,
+              }}>
               <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
-                {now.getHours() >= 17 ? 'Tonight' : 'Today'}
+                {selected.walkMinutes} min from you
               </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to all rooms"
+                hitSlop={12}
+                onPress={clear}>
+                <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.coral }}>
+                  All rooms
+                </Text>
+              </Pressable>
             </View>
-            <FeedTabs active={tab} onChange={setTab} />
-          </View>
+          ) : (
+            <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14, gap: 14 }}>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                <Text
+                  style={{
+                    fontFamily: font.bold,
+                    fontSize: 17,
+                    letterSpacing: em(-0.015, 17),
+                    color: c.ink,
+                  }}>
+                  {live.length} {live.length === 1 ? 'room' : 'rooms'} live nearby
+                </Text>
+                <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
+                  {now.getHours() >= 17 ? 'Tonight' : 'Today'}
+                </Text>
+              </View>
+              <FeedTabs active={tab} onChange={setTab} />
+            </View>
+          )
         }
         contentStyle={{ paddingHorizontal: 22, paddingTop: 18, paddingBottom: 24 }}>
-        {shown.length === 0 ? (
+        {selected ? (
+          <RoomPreview room={selected} now={now} />
+        ) : shown.length === 0 ? (
           <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
             Nothing in this window. Try another.
           </Text>

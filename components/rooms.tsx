@@ -1,9 +1,21 @@
 import { Pressable, Text, View } from 'react-native';
-import { hostOf, metaOf, rosterOf, seatsLeft, statusOf, type Room, type Status } from '../data';
+import {
+  hostOf,
+  isLive,
+  metaOf,
+  rosterOf,
+  seatsLeft,
+  statusOf,
+  you,
+  type Person,
+  type Room,
+  type Status,
+} from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 import { PeelCorner } from './icons';
-import { Avatar, PrimaryButton, StatusLine } from './ui';
+import { Avatar, AvatarCell, NoteItem, PrimaryButton, SlotCell, StatusLine } from './ui';
+import { ago } from '../time';
 
 /** One rule for how a room's status reads, everywhere a room appears. */
 export const RoomStatus = ({ status, small }: { status: Status; small?: boolean }) => {
@@ -152,6 +164,97 @@ export const RoomRow = ({
         <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>{right}</Text>
       ) : null}
     </Pressable>
+  );
+};
+
+/**
+ * Who's in a room, as faces. Lives here rather than in `screens/Room.tsx` so
+ * the room screen and the map's preview can't drift apart on what a roster is.
+ */
+export const Roster = ({
+  room,
+  extra = [],
+  showOpenSeats,
+  limit = 6,
+}: {
+  room: Room;
+  /** Anyone approved during this session. */
+  extra?: Person[];
+  showOpenSeats?: boolean;
+  limit?: number;
+}) => {
+  const named = [...rosterOf(room), ...extra].slice(0, limit);
+  const unnamed = room.attendees.length + extra.length - named.length;
+  const open = seatsLeft(room) - extra.length;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+      {named.map((p) => (
+        <AvatarCell
+          key={p.id}
+          initials={p.initials}
+          name={p.id === you.id ? 'You' : p.short}
+          tone={p.tone}
+          host={p.id === room.hostId}
+          onPress={() => router.push(p.id === you.id ? '/you' : `/profile/${p.id}`)}
+        />
+      ))}
+      {showOpenSeats
+        ? open > 0 && <SlotCell badge={`${open}`} label="open" />
+        : unnamed > 0 && <SlotCell badge={`+${unnamed}`} label="more" />}
+    </View>
+  );
+};
+
+/**
+ * The selected room, in the sheet. Enough to decide without opening anything —
+ * who's hosting, who's there, how far, and the host's last word — plus the one
+ * action that matters. Every label comes from the same helpers the feed and the
+ * room screen use, so a room reads identically wherever you meet it.
+ */
+export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
+  const { c } = useTheme();
+  const host = hostOf(room);
+  const joined = room.attendees.includes(you.id);
+  const full = seatsLeft(room) === 0;
+  const latest = room.updates[0];
+  const action = joined
+    ? 'Open room'
+    : full
+      ? 'Room is full'
+      : room.access === 'approve'
+        ? 'Ask to join'
+        : 'Join';
+  return (
+    <View style={{ gap: 14 }}>
+      <View>
+        <RoomStatus status={statusOf(room, now)} />
+        <Text style={[type.cardTitle, { color: c.ink, marginTop: 8 }]}>{room.title}</Text>
+        <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 5 }}>
+          Hosted by {host.name}
+          {host.year ? ` · ${host.year}` : ''}
+        </Text>
+        <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2, marginTop: 3 }}>
+          {metaOf(room, now)}
+        </Text>
+      </View>
+
+      <Roster room={room} limit={5} showOpenSeats={!isLive(room, now)} />
+
+      {latest ? (
+        <NoteItem
+          text={latest.text}
+          meta={`${host.short} · ${ago(latest.at, now)}`}
+          accent={c.green}
+          muted
+        />
+      ) : null}
+
+      <PrimaryButton
+        label={action}
+        disabled={full && !joined}
+        onPress={() => router.push(`/room/${room.id}`)}
+      />
+    </View>
   );
 };
 

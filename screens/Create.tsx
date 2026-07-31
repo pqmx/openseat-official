@@ -15,6 +15,7 @@ import {
   YearChip,
 } from '../components/ui';
 import { router } from 'expo-router';
+import { createRoom } from '../data';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Cancel / STEP n / 2 / action — the bar on both create steps. */
@@ -202,7 +203,10 @@ export function CreateStep1() {
         <PrimaryButton
           label="Next: when & who"
           height={44}
-          onPress={() => router.push('/create/details')}
+          // Step 2 owns the draft's other half, so what you typed here rides
+          // along in the URL — otherwise the room you create isn't the one you
+          // described.
+          onPress={() => router.push({ pathname: '/create/details', params: { title, place } })}
           style={{ flex: 1 }}
         />
       </Footer>
@@ -273,7 +277,7 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
 /** Create, step 2 — when and who. */
 const allYears = ["'27", "'28", "'29", 'Grad'];
 
-export function CreateStep2() {
+export function CreateStep2({ title, place }: { title?: string; place?: string }) {
   const { c } = useTheme();
   const [when, setWhen] = useState('Now');
   const [cap, setCap] = useState(18);
@@ -284,6 +288,23 @@ export function CreateStep2() {
   const toggleYear = (y: string) =>
     setYears((v) => (v.includes(y) ? v.filter((x) => x !== y) : [...v, y]));
   const previewYears = yearsOnly && years.length ? ` · ${years.join('–')}` : '';
+  // Step 1's values arrive as params; the defaults keep this screen openable
+  // on its own, which is how the design was reviewed.
+  const draftTitle = title || 'Sunset set on Lot D roof';
+  const draftPlace = place || 'Lot D rooftop';
+
+  const open = () => {
+    const id = createRoom({
+      title: draftTitle,
+      place: draftPlace,
+      // "Now" means live the moment you press it; "Later" is the design's 8:15.
+      startsAt: when === 'Now' ? new Date() : new Date(Date.now() + 60 * 60_000),
+      capacity: cap,
+      access: approve ? 'approve' : 'open',
+      years: yearsOnly && years.length ? years : undefined,
+    });
+    router.replace(`/room/${id}`);
+  };
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -435,10 +456,10 @@ export function CreateStep2() {
                 marginTop: 8,
                 paddingRight: 26,
               }}>
-              Sunset set on Lot D roof
+              {draftTitle}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 4 }}>
-              Lot D rooftop · {when === 'Now' ? '7:15 PM' : '8:15 PM'} · {cap} seats{previewYears}
+              {draftPlace} · {when === 'Now' ? '7:15 PM' : '8:15 PM'} · {cap} seats{previewYears}
             </Text>
             <PeelCorner
               size={26}
@@ -449,14 +470,12 @@ export function CreateStep2() {
               hair2={c.hair2}
             />
           </View>
-          {/* Approving requests is the only thing that changes where you land. */}
-          <PrimaryButton
-            label="Open the room"
-            // Nothing persists yet, so the new room falls back to a fixture.
-            onPress={() =>
-              router.replace(`/room/new?view=${approve ? 'requests' : 'host'}`)
-            }
-          />
+          {/*
+            The room is appended to `rooms` and we navigate to its own id, so
+            `viewOf` works out host-versus-requests from the access setting on
+            its own — no `?view=` needed. It still doesn't survive a restart.
+          */}
+          <PrimaryButton label="Open the room" onPress={open} />
         </View>
       </Body>
     </View>

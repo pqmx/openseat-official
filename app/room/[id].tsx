@@ -1,6 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import { roomById, viewOf, type RoomView } from '../../data';
+import { NotFound } from '../../screens/NotFound';
 import { Room, RoomCanceled, RoomCasualPreJoin, RoomHost, RoomHostRequests } from '../../screens/Room';
+
+/** Five screens behind one route; a throw in any of them stops here. */
+export { RouteError as ErrorBoundary } from '../../screens/NotFound';
 
 const views = {
   member: Room,
@@ -18,6 +22,9 @@ const views = {
 export default function RoomRoute() {
   const { id, view } = useLocalSearchParams<{ id: string; view?: RoomView }>();
   const room = roomById(id);
+  // A bad id is a dead link, not room one. Saying so beats rendering somebody
+  // else's room as though it were the one you asked for.
+  if (!room) return <NotFound />;
   const Screen = views[view ?? viewOf(room)];
   return <Screen key={room.id} room={room} />;
 }

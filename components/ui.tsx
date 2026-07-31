@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
   type TextStyle,
@@ -258,6 +259,7 @@ export const PrimaryButton = ({
   label,
   height = 46,
   danger,
+  disabled,
   style,
   onPress,
   children,
@@ -265,6 +267,8 @@ export const PrimaryButton = ({
   label: string;
   height?: number;
   danger?: boolean;
+  /** A full room still says so — it just stops offering the tap. */
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   children?: React.ReactNode;
@@ -274,12 +278,14 @@ export const PrimaryButton = ({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={[
         {
           height,
           borderRadius: radius.md,
-          backgroundColor: danger ? c.danger : c.coral,
+          backgroundColor: disabled ? c.disabled : danger ? c.danger : c.coral,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
@@ -543,8 +549,24 @@ export const MapPlate = ({
   );
 };
 
-/** Floating "Near campus" search + filter row over the map. */
-export const MapSearchBar = () => {
+/**
+ * Floating search + filter row over the map. Both halves used to be plain
+ * Views that looked tappable and weren't; the placeholder still reads "Near
+ * campus" because that's the scope, but nothing here implies GPS — the app
+ * never asks for location.
+ */
+export const MapSearchBar = ({
+  text,
+  onText,
+  filtersOn,
+  onFilters,
+}: {
+  text: string;
+  onText: (t: string) => void;
+  /** Dot on the filter button when the feed is narrowed. */
+  filtersOn?: boolean;
+  onFilters: () => void;
+}) => {
   const { c } = useTheme();
   return (
     <View
@@ -571,23 +593,51 @@ export const MapSearchBar = () => {
           borderColor: c.frame,
         }}>
         <SearchIcon color={c.mute2} />
-        <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
-          Near campus
-        </Text>
+        <TextInput
+          value={text}
+          onChangeText={onText}
+          placeholder="Near campus"
+          placeholderTextColor={c.mute}
+          accessibilityLabel="Search rooms"
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          autoCorrect={false}
+          // Place names aren't sentences; the match is case-insensitive either
+          // way, but the field shouldn't shout back at you.
+          autoCapitalize="none"
+          style={{ flex: 1, fontFamily: font.regular, fontSize: 13.5, color: c.ink }}
+        />
       </View>
-      <View
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Filters"
+        accessibilityState={{ expanded: !!filtersOn }}
+        onPress={onFilters}
         style={{
           width: 42,
           height: 42,
           borderRadius: radius.md,
           backgroundColor: c.surface94,
           borderWidth: 1,
-          borderColor: c.frame,
+          borderColor: filtersOn ? c.ink : c.frame,
           alignItems: 'center',
           justifyContent: 'center',
         }}>
         <FilterIcon color={c.ink2} />
-      </View>
+        {filtersOn ? (
+          <View
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              width: 6,
+              height: 6,
+              borderRadius: radius.round,
+              backgroundColor: c.coral,
+            }}
+          />
+        ) : null}
+      </Pressable>
     </View>
   );
 };

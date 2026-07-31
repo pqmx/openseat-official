@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
-import { RoomRow, RoomStatus } from '../components/rooms';
+import { RoomRow, RoomStatus, Roster } from '../components/rooms';
 import { BackIcon, LockIcon, MoreIcon } from '../components/icons';
 import {
   Avatar,
-  AvatarCell,
   Body,
   Chip,
   Dot,
@@ -13,7 +12,6 @@ import {
   MapPlate,
   NoteItem,
   PrimaryButton,
-  SlotCell,
   StatusStrip,
   TextButton,
 } from '../components/ui';
@@ -22,7 +20,6 @@ import {
   hostOf,
   isLive,
   personById,
-  rosterOf,
   seatsLeft,
   statusOf,
   useNow,
@@ -107,38 +104,6 @@ const SectionHead = ({ label, right }: { label: string; right: string }) => {
  * The "who's here" grid. Named people first, then one dashed cell standing in
  * for whoever the roster doesn't name — or for the seats still open.
  */
-const Roster = ({
-  room,
-  extra = [],
-  showOpenSeats,
-}: {
-  room: RoomModel;
-  /** Anyone approved during this session. */
-  extra?: Person[];
-  showOpenSeats?: boolean;
-}) => {
-  const named = [...rosterOf(room), ...extra].slice(0, 6);
-  const unnamed = room.attendees.length + extra.length - named.length;
-  const open = seatsLeft(room) - extra.length;
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-      {named.map((p) => (
-        <AvatarCell
-          key={p.id}
-          initials={p.initials}
-          name={p.id === you.id ? 'You' : p.short}
-          tone={p.tone}
-          host={p.id === room.hostId}
-          onPress={() => router.push(p.id === you.id ? '/you' : `/profile/${p.id}`)}
-        />
-      ))}
-      {showOpenSeats
-        ? open > 0 && <SlotCell badge={`${open}`} label="open" />
-        : unnamed > 0 && <SlotCell badge={`+${unnamed}`} label="more" />}
-    </View>
-  );
-};
-
 /** Precise-location map card, shown once you're in the room. */
 const RoomMap = ({ room }: { room: RoomModel }) => {
   const { c } = useTheme();

@@ -294,7 +294,12 @@ export const rooms: Room[] = [
   },
 ];
 
-export const roomById = (id: string) => rooms.find((r) => r.id === id) ?? rooms[0];
+/**
+ * Undefined when there's no such room, so callers have to say what that looks
+ * like. This used to fall back to `rooms[0]`, which meant a stale link quietly
+ * rendered somebody else's room as though you'd asked for it.
+ */
+export const roomById = (id: string) => rooms.find((r) => r.id === id);
 export const personById = (id: string) => people.find((p) => p.id === id);
 
 /** Rooms this person hosts, live first — the tail of their profile. */
@@ -302,7 +307,22 @@ export const hostedBy = (personId: string, now: Date) =>
   rooms
     .filter((r) => r.hostId === personId && !r.canceledAt)
     .sort((a, b) => Number(isLive(b, now)) - Number(isLive(a, now)));
-export const hostOf = (room: Room) => personById(room.hostId) ?? you;
+
+/**
+ * Stands in for a host who isn't in `people`. Five screens read `hostOf(room)`
+ * unconditionally, so it stays total — but the old fallback was `you`, which
+ * told you that you hosted a room you'd never opened.
+ */
+const unknownPerson: Person = {
+  id: '?',
+  initials: '?',
+  short: 'Someone',
+  name: 'Someone',
+  year: '',
+  major: '',
+};
+
+export const hostOf = (room: Room) => personById(room.hostId) ?? unknownPerson;
 
 /** Named people only — the roster is padded with anonymous ids for the count. */
 export const rosterOf = (room: Room) =>
@@ -311,6 +331,29 @@ export const rosterOf = (room: Room) =>
 export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attendees.length);
 export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
 export const isHost = (room: Room, person = you) => room.hostId === person.id;
+
+/**
+ * Whether the map may drop a pin on the room's actual address. Casual rooms
+ * keep that private until you're in — the same rule `viewOf` uses to send
+ * non-members to the pre-join screen, so the two can't disagree.
+ */
+export const showsExactPin = (room: Room, person = you) =>
+  !room.casual || room.attendees.includes(person.id);
+
+/** What the feed's search field and filter panel narrow by. */
+export type Query = { text?: string; maxWalk?: number; openOnly?: boolean };
+
+/** Free text hits the three things a room is findable by; the rest are limits. */
+export const matchesQuery = (room: Room, q: Query) => {
+  const text = q.text?.trim().toLowerCase();
+  if (text) {
+    const haystack = `${room.title} ${room.place} ${room.street}`.toLowerCase();
+    if (!haystack.includes(text)) return false;
+  }
+  if (q.maxWalk !== undefined && room.walkMinutes > q.maxWalk) return false;
+  if (q.openOnly && seatsLeft(room) === 0) return false;
+  return true;
+};
 
 export type Status = { label: string; tone: 'live' | 'soon' | 'off' };
 
@@ -347,6 +390,45 @@ export const viewOf = (room: Room): RoomView => {
   if (room.attendees.includes(you.id)) return 'member';
   // Casual rooms hide their pin until you're in, so non-members get that view.
   return room.casual ? 'casual' : 'member';
+};
+
+/** What Create knows by the time you press "Open the room". */
+export type Draft = {
+  title: string;
+  place: string;
+  startsAt: Date;
+  capacity: number;
+  access: Access;
+  years?: string[];
+};
+
+/**
+ * Appends a room you host and returns its id, so Create can navigate to the
+ * room it just made instead of to a fixture. In memory only — this dies with
+ * the process, and is the seam a POST replaces.
+ * ponytail: no persistence, swap for the API call when there is one.
+ */
+export const createRoom = (draft: Draft) => {
+  const id = `new-${rooms.length}-${draft.startsAt.getTime()}`;
+  rooms.push({
+    id,
+    title: draft.title,
+    place: draft.place,
+    street: 'Charles E Young Dr',
+    walkMinutes: 4,
+    // Campus centre until Create can actually place a pin.
+    lat: 34.0701,
+    lng: -118.4445,
+    hostId: you.id,
+    startsAt: draft.startsAt,
+    capacity: draft.capacity,
+    access: draft.access,
+    years: draft.years,
+    attendees: [you.id],
+    requests: [],
+    updates: [],
+  });
+  return id;
 };
 
 /** Rooms you host or have joined, live first — the Rooms tab. */
