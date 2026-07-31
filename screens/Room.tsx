@@ -324,13 +324,14 @@ export function RoomHost({ room }: { room: RoomModel }) {
   const { c } = useTheme();
   const now = useNow();
   const [draft, setDraft] = useState('');
-  const [updates, setUpdates] = useState(room.updates);
+  const [posted, setPosted] = useState<RoomModel['updates']>([]);
+  const updates = [...posted, ...room.updates];
   const post = () => {
     const text = draft.trim();
     if (!text) return;
-    setUpdates((u) => [
+    setPosted((p) => [
       { id: `u${Date.now()}`, text, at: new Date(), byId: you.id, seenBy: 0 },
-      ...u,
+      ...p,
     ]);
     setDraft('');
   };
@@ -452,10 +453,11 @@ export function RoomHost({ room }: { room: RoomModel }) {
 export function RoomHostRequests({ room }: { room: RoomModel }) {
   const { c } = useTheme();
   const now = useNow();
-  const [waiting, setWaiting] = useState(room.requests);
+  const [decidedIds, setDecidedIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState<Person[]>([]);
+  const waiting = room.requests.filter((id) => !decidedIds.has(id));
   const decide = (id: string, approve: boolean) => {
-    setWaiting((v) => v.filter((q) => q !== id));
+    setDecidedIds((v) => new Set(v).add(id));
     const person = personById(id);
     if (approve && person) setApproved((v) => [...v, person]);
   };

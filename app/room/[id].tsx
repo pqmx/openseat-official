@@ -19,5 +19,5 @@ export default function RoomRoute() {
   const { id, view } = useLocalSearchParams<{ id: string; view?: RoomView }>();
   const room = roomById(id);
   const Screen = views[view ?? viewOf(room)];
-  return <Screen room={room} />;
+  return <Screen key={room.id} room={room} />;
 }
