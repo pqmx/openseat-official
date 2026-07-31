@@ -4,22 +4,18 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 
 # Openseat — current state
 
-Scaffold done: Expo ~57.0.9, react-native 0.86.2, react 19.2.3, blank-typescript.
-`npx tsc --noEmit` passes. Nothing else is built yet.
+Expo ~57.0.9, react-native 0.86.2, react 19.2.3, blank-typescript. `npx tsc --noEmit` passes.
 
-## Next task
+Design system + all 15 screens of `openseat v4.dc.html` are built:
 
-Import the design project via the `claude_design` MCP:
-https://claude.ai/design/p/fd459e77-1200-46f0-b9e2-64405ca1dfb5?file=Openseat+Design+System.dc.html
+- `theme.ts` — light/dark tokens transcribed verbatim from the file's two `:root` blocks.
+- `components/icons.tsx`, `components/ui.tsx` — only what the design renders.
+- `screens/` — Discover, Room, Profile, Create, Onboarding, Report.
+- `App.tsx` — font loading, theme provider, and a throwaway screen picker (no navigation yet).
 
-Files: `Openseat Design System.dc.html` (primary) and `support.js` (imported by it).
+Source of truth is `openseat v4.dc.html` (v1–v3 and `Openseat Design System.dc.html` are older).
 
 ## Agreed scope — do not exceed
 
-Tokens + only the components the design file actually renders.
-
-1. One `theme.ts`: colors, spacing, typography, radii. Straight from the file, no invented values.
-2. Only components visibly used in the design — Button, Card, etc. Skip any component that is
-   defined but unused. No full component library, no screens.
-
-Decided 2026-07-30. Widen the scope only if the user asks.
+Only components and screens the design file actually renders. No invented values, no full
+component library, no navigation library, no backend. Widen the scope only if the user asks.
