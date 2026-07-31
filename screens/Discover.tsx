@@ -4,7 +4,7 @@ import MapView, { Marker, type Region } from 'react-native-maps';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import { RoomCard, RoomRow, RoomStatus } from '../components/rooms';
 import { BottomSheet } from '../components/sheet';
-import { Dot, Eyebrow, MapSearchBar, PrimaryButton } from '../components/ui';
+import { Eyebrow, MapSearchBar, PrimaryButton } from '../components/ui';
 import { feedFor, isLive, useNow, you, type Room } from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
@@ -41,30 +41,56 @@ const MapPin = ({
   onPress: () => void;
 }) => {
   const { c } = useTheme();
+  const size = selected ? 26 : 16;
   return (
     <Marker
       coordinate={{ latitude: room.lat, longitude: room.lng }}
       // The label sits to the right of the dot, so the dot — not the middle of
       // the whole row — is what lands on the coordinate.
-      anchor={selected ? { x: 0.12, y: 0.5 } : { x: 0.5, y: 0.5 }}
-      tracksViewChanges={false}
+      anchor={selected ? { x: 0.14, y: 0.5 } : { x: 0.5, y: 0.5 }}
+      zIndex={selected ? 2 : 1}
       onPress={onPress}
       accessibilityLabel={room.title}>
       <View
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6 }}
+        // Room to draw the shadow — a marker view clips to its own bounds.
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8 }}
         accessible
         accessibilityState={{ selected }}>
-        <Dot color={selected ? c.green : c.blue} size={selected ? 14 : 11} glow={selected ? c.greenGlow : undefined} />
+        <View
+          style={{
+            width: size,
+            height: size,
+            borderRadius: radius.round,
+            backgroundColor: selected ? c.green : c.blue,
+            // The white collar is what reads as an Apple annotation: it holds
+            // the dot off whatever it's sitting on, so a pin over a park and a
+            // pin over a road are equally legible.
+            borderWidth: selected ? 3 : 2.5,
+            borderColor: c.raised,
+            boxShadow: `0px 1px 4px ${c.shadowCol}`,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          {selected ? (
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: radius.round,
+                backgroundColor: c.raised,
+              }}
+            />
+          ) : null}
+        </View>
         {selected ? (
           <View
             style={{
               gap: 1,
-              paddingVertical: 5,
-              paddingHorizontal: 9,
+              paddingVertical: 6,
+              paddingHorizontal: 10,
               borderRadius: radius.chip,
-              backgroundColor: c.surface94,
-              borderWidth: 1,
-              borderColor: c.frame,
+              backgroundColor: c.raised,
+              boxShadow: `0px 1px 4px ${c.shadowCol}`,
             }}>
             <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
               {room.title.split(',')[0]}
@@ -153,6 +179,13 @@ const Map = ({
       showsMyLocationButton={false}
       showsCompass={false}
       toolbarEnabled={false}
+      /*
+       * Apple's own place pins — every storefront on Broxton — compete with the
+       * room pins and win, because there are fifty of them. Streets, parks and
+       * buildings stay; the commercial clutter goes. Note the trailing "s":
+       * react-native-maps spells this one `showsPointsOfInterests`.
+       */
+      showsPointsOfInterests={false}
       /*
        * Without this the map centres behind the sheet and every pin sits in
        * the covered half. Padding tells it the usable viewport is the band
