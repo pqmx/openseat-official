@@ -10,12 +10,12 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   type AnimatedRef,
   SnappySpringConfig,
-  runOnJS,
   useAnimatedStyle,
   useScrollOffset,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { nearestSnap } from '../snap';
 import { radius, useTheme } from '../theme';
 
@@ -91,7 +91,7 @@ export const BottomSheet = ({
     'worklet';
     const i = nearestSnap(y.value, snaps, velocity);
     y.value = withSpring(snaps[i], SnappySpringConfig);
-    runOnJS(onIndexChange)(i);
+    scheduleOnRN(onIndexChange, i);
   };
 
   const headerPan = Gesture.Pan()
@@ -150,11 +150,7 @@ export const BottomSheet = ({
               borderTopRightRadius: radius.sheet,
               borderTopWidth: 1,
               borderColor: c.frame,
-              shadowColor: c.shadowCol,
-              shadowOpacity: 1,
-              shadowRadius: 18,
-              shadowOffset: { width: 0, height: -6 },
-              elevation: 16,
+              boxShadow: `0px -6px 18px ${c.shadowCol}`,
             },
             slide,
           ]}>

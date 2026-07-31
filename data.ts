@@ -43,6 +43,9 @@ export type Room = {
   place: string;
   street: string;
   walkMinutes: number;
+  /** Where the pin drops. Real Westwood coordinates, WGS84. */
+  lat: number;
+  lng: number;
   hostId: string;
   startsAt: Date;
   canceledAt?: Date;
@@ -146,6 +149,8 @@ export const rooms: Room[] = [
     place: 'Lot D rooftop, level 5',
     street: 'Charles E Young Dr',
     walkMinutes: 4,
+    lat: 34.07,
+    lng: -118.442,
     hostId: 'mj',
     startsAt: minutesAgo(22),
     capacity: 18,
@@ -176,6 +181,8 @@ export const rooms: Room[] = [
     place: 'Outside Diddy Riese',
     street: 'Broxton Ave',
     walkMinutes: 6,
+    lat: 34.063,
+    lng: -118.4462,
     hostId: 'sp',
     startsAt: minutesAgo(8),
     capacity: 12,
@@ -190,6 +197,8 @@ export const rooms: Room[] = [
     place: 'Hedrick Hall, floor 1',
     street: 'De Neve Dr',
     walkMinutes: 3,
+    lat: 34.073,
+    lng: -118.4522,
     hostId: 'dl',
     startsAt: minutesAgo(41),
     capacity: 15,
@@ -204,6 +213,8 @@ export const rooms: Room[] = [
     place: 'Perloff Hall, studio 1220',
     street: 'Charles E Young Dr',
     walkMinutes: 7,
+    lat: 34.0745,
+    lng: -118.4402,
     hostId: 'mj',
     startsAt: minutesAgo(12),
     capacity: 8,
@@ -218,6 +229,8 @@ export const rooms: Room[] = [
     place: 'A place on Broxton',
     street: 'Westwood',
     walkMinutes: 10,
+    lat: 34.0627,
+    lng: -118.4458,
     hostId: 'at',
     startsAt: minutesOn(75),
     capacity: 4,
@@ -235,6 +248,8 @@ export const rooms: Room[] = [
     place: 'Powell Library, floor 2',
     street: 'Charles E Young Dr',
     walkMinutes: 8,
+    lat: 34.0717,
+    lng: -118.4423,
     hostId: 'rk',
     startsAt: nextAt(21, 30),
     capacity: 20,
@@ -250,6 +265,8 @@ export const rooms: Room[] = [
     place: 'Bruin Walk',
     street: 'Bruin Walk',
     walkMinutes: 5,
+    lat: 34.0705,
+    lng: -118.4468,
     hostId: 'nb',
     startsAt: nextWeekdayAt(6, 14),
     capacity: 24,
@@ -264,6 +281,8 @@ export const rooms: Room[] = [
     place: 'Sunset Rec',
     street: 'De Neve Dr',
     walkMinutes: 12,
+    lat: 34.0722,
+    lng: -118.4505,
     hostId: 'mj',
     startsAt: nextWeekdayAt(6, 16),
     capacity: 12,

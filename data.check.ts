@@ -18,4 +18,14 @@ assert.equal(viewOf(room({})), 'member');
 // Every fixture resolves to a screen app/room/[id].tsx can render.
 for (const r of rooms) assert.ok(viewOf(r));
 
+// Every room has a pin, and it lands in Westwood rather than the Gulf of
+// Guinea — a swapped lat/lng or a dropped minus sign is the easy mistake.
+for (const r of rooms) {
+  assert.ok(r.lat > 34.06 && r.lat < 34.076, `${r.id} latitude off campus: ${r.lat}`);
+  assert.ok(r.lng > -118.4535 && r.lng < -118.438, `${r.id} longitude off campus: ${r.lng}`);
+  // North-west of this diagonal is Bel Air and the golf course, not campus —
+  // the corner a plausible-looking pair of numbers actually lands in.
+  assert.ok(!(r.lat > 34.0735 && r.lng < -118.445), `${r.id} is up in Bel Air`);
+}
+
 console.log('data.ts ok');

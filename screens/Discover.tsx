@@ -1,48 +1,31 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import Animated, {
-  type SharedValue,
-  SnappySpringConfig,
-  useAnimatedRef,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import MapView, { Marker, type Region } from 'react-native-maps';
+import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import { RoomCard, RoomRow, RoomStatus } from '../components/rooms';
 import { BottomSheet } from '../components/sheet';
-import { Dot, Eyebrow, MapPlate, MapSearchBar, PrimaryButton } from '../components/ui';
+import { Dot, Eyebrow, MapSearchBar, PrimaryButton } from '../components/ui';
 import { feedFor, isLive, useNow, you, type Room } from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
-const MapLabel = ({ text, color, left, top }: { text: string; color: string; left: number; top: number }) => (
-  <Text
-    style={{
-      position: 'absolute',
-      left,
-      top,
-      fontFamily: font.regular,
-      fontSize: 10,
-      letterSpacing: em(0.18, 10),
-      textTransform: 'uppercase',
-      color,
-    }}>
-    {text}
-  </Text>
-);
-
-/** Pins are laid out by hand — the plate is decorative, not a real map. */
-const pinSpots = [
-  { left: 154, top: 206 },
-  { left: 262, top: 166 },
-  { left: 72, top: 142 },
-  { left: 104, top: 236 },
-  { left: 296, top: 288 },
-];
-
 /** How much of the sheet's container is showing at each stop. */
 const detents = [0.12, 0.55, 0.92];
 const HALF = 1;
+
+/**
+ * Westwood, framed so the campus rooms and the village rooms both land on
+ * screen. Only the opening shot — after that the camera is the map's own.
+ */
+const westwood: Region = {
+  latitude: 34.0686,
+  longitude: -118.4465,
+  latitudeDelta: 0.022,
+  longitudeDelta: 0.016,
+};
+
+/** Tight enough to read a building, wide enough to keep its neighbours. */
+const closeDelta = { latitudeDelta: 0.006, longitudeDelta: 0.005 };
 
 /**
  * A pin. Selected, it names its room; otherwise it's a bare dot, so at most
@@ -51,29 +34,38 @@ const HALF = 1;
 const MapPin = ({
   room,
   selected,
-  left,
-  top,
   onPress,
 }: {
   room: Room;
   selected: boolean;
-  left: number;
-  top: number;
   onPress: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={room.title}
-      accessibilityState={{ selected }}
+    <Marker
+      coordinate={{ latitude: room.lat, longitude: room.lng }}
+      // The label sits to the right of the dot, so the dot — not the middle of
+      // the whole row — is what lands on the coordinate.
+      anchor={selected ? { x: 0.12, y: 0.5 } : { x: 0.5, y: 0.5 }}
+      tracksViewChanges={false}
       onPress={onPress}
-      hitSlop={10}
-      style={{ position: 'absolute', left: left - 5, top: top - 8 }}>
-      {selected ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Dot color={c.green} size={14} glow={c.greenGlow} />
-          <View style={{ gap: 1 }}>
+      accessibilityLabel={room.title}>
+      <View
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6 }}
+        accessible
+        accessibilityState={{ selected }}>
+        <Dot color={selected ? c.green : c.blue} size={selected ? 14 : 11} glow={selected ? c.greenGlow : undefined} />
+        {selected ? (
+          <View
+            style={{
+              gap: 1,
+              paddingVertical: 5,
+              paddingHorizontal: 9,
+              borderRadius: radius.chip,
+              backgroundColor: c.surface94,
+              borderWidth: 1,
+              borderColor: c.frame,
+            }}>
             <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
               {room.title.split(',')[0]}
             </Text>
@@ -81,11 +73,9 @@ const MapPin = ({
               {room.attendees.length} here
             </Text>
           </View>
-        </View>
-      ) : (
-        <Dot color={c.blue} size={9} />
-      )}
-    </Pressable>
+        ) : null}
+      </View>
+    </Marker>
   );
 };
 
@@ -138,84 +128,51 @@ const filterFeed = (feed: Room[], tab: string, now: Date) => {
 };
 
 /**
- * The plate, full-bleed behind the sheet. `pan` is the closest thing this
- * screen has to a camera: selecting a pin springs the plate so that pin sits
- * in the open area above the sheet. Nothing resets it, so collapsing the sheet
- * leaves the view exactly where it was.
+ * The map, full-bleed behind the sheet. It owns its own camera — nothing here
+ * writes a region back to it after the first frame, so panning and zooming
+ * survive everything the sheet does, and the sheet survives everything the map
+ * does. `mapRef` is the screen's only handle, used to fly to a pin.
  */
 const Map = ({
   live,
   selectedId,
   onSelect,
-  dimmed,
-  pan,
+  mapRef,
 }: {
   live: Room[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  dimmed?: boolean;
-  pan: { x: SharedValue<number>; y: SharedValue<number> };
-}) => {
-  const { c } = useTheme();
-  const drift = useAnimatedStyle(() => ({
-    transform: [{ translateX: pan.x.value }, { translateY: pan.y.value }],
-  }));
-  return (
-    <MapPlate cellW={100} cellH={120} style={StyleSheet.absoluteFill}>
-      <Animated.View style={[StyleSheet.absoluteFill, drift]}>
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 246,
-            width: 210,
-            height: 170,
-            backgroundColor: c.park,
-          }}
+  mapRef: React.RefObject<MapView | null>;
+}) => (
+  <View style={StyleSheet.absoluteFill}>
+    <MapView
+      ref={mapRef}
+      style={StyleSheet.absoluteFill}
+      initialRegion={westwood}
+      showsUserLocation={false}
+      showsMyLocationButton={false}
+      showsCompass={false}
+      toolbarEnabled={false}
+      /*
+       * Without this the map centres behind the sheet and every pin sits in
+       * the covered half. Padding tells it the usable viewport is the band
+       * above the half-open sheet, which is where centring and the opening
+       * frame both aim. It's a constant on purpose — following the sheet
+       * would re-render the map mid-drag and shove the camera around.
+       */
+      mapPadding={{ top: 0, right: 0, bottom: 380, left: 0 }}>
+      {live.map((room) => (
+        <MapPin
+          key={room.id}
+          room={room}
+          selected={room.id === selectedId}
+          onPress={() => onSelect(room.id)}
         />
-        <View
-          style={{ position: 'absolute', left: -30, top: 118, width: 460, height: 14, backgroundColor: c.water }}
-        />
-        {dimmed ? null : (
-          <>
-            <MapLabel text="the quad" color={c.parkLabel} left={24} top={322} />
-            <MapLabel text="sunset canyon" color={c.waterLabel} left={216} top={126} />
-          </>
-        )}
-        {live.slice(0, pinSpots.length).map((room, i) => (
-          <MapPin
-            key={room.id}
-            room={room}
-            selected={room.id === selectedId}
-            onPress={() => onSelect(room.id)}
-            {...pinSpots[i]}
-          />
-        ))}
-        {dimmed ? (
-          <>
-            <View
-              style={{
-                position: 'absolute',
-                left: 139,
-                top: 170,
-                width: 70,
-                height: 70,
-                borderRadius: radius.round,
-                borderWidth: 1,
-                borderStyle: 'dashed',
-                borderColor: c.dash,
-              }}
-            />
-            <View style={{ position: 'absolute', left: 166, top: 197 }}>
-              <Dot color={c.dotMute} size={14} outline />
-            </View>
-          </>
-        ) : null}
-      </Animated.View>
-      <MapSearchBar />
-    </MapPlate>
-  );
-};
+      ))}
+    </MapView>
+    <MapSearchBar />
+  </View>
+);
 
 /**
  * One room in the sheet. `box-only` is the point: `RoomCard` and `RoomRow` are
@@ -268,37 +225,34 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const listRef = useAnimatedRef<Animated.ScrollView>();
+  const mapRef = useRef<MapView | null>(null);
   const rowY = useRef<Record<string, number>>({});
-  const panX = useSharedValue(0);
-  const panY = useSharedValue(0);
 
   const feed = feedFor(viewerYear, now);
   const live = feed.filter((r) => isLive(r, now));
   const upcoming = feed.filter((r) => !isLive(r, now));
   const shown = filterFeed(feed, tab, now);
 
-  /** Springs the plate so `room`'s pin lands in the open area above the sheet. */
-  const center = useCallback(
-    (id: string) => {
-      const at = live.findIndex((r) => r.id === id);
-      if (at < 0 || at >= pinSpots.length) return;
-      const spot = pinSpots[at];
-      panX.value = withSpring(180 - spot.left, SnappySpringConfig);
-      panY.value = withSpring(150 - spot.top, SnappySpringConfig);
-    },
-    [live, panX, panY]
-  );
+  /** Flies the camera to a room's pin; `mapPadding` keeps it clear of the sheet. */
+  const center = useCallback((room: Room) => {
+    mapRef.current?.animateToRegion(
+      { latitude: room.lat, longitude: room.lng, ...closeDelta },
+      380
+    );
+  }, []);
 
   /** A pin: select it, open the sheet to half, and bring its row into view. */
   const fromPin = useCallback(
     (id: string) => {
+      const room = live.find((r) => r.id === id);
+      if (!room) return;
       setSelectedId(id);
       setIndex(HALF);
-      center(id);
+      center(room);
       const y = rowY.current[id];
       if (y !== undefined) listRef.current?.scrollTo({ y, animated: true });
     },
-    [center, listRef]
+    [center, listRef, live]
   );
 
   /**
@@ -309,14 +263,13 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
    */
   const fromRow = useCallback(
     (id: string) => {
-      const at = live.findIndex((r) => r.id === id);
-      const pinned = at >= 0 && at < pinSpots.length;
-      if (selectedId === id || !pinned) {
+      const room = live.find((r) => r.id === id);
+      if (selectedId === id || !room) {
         router.push(`/room/${id}`);
         return;
       }
       setSelectedId(id);
-      center(id);
+      center(room);
     },
     [center, live, selectedId]
   );
@@ -324,7 +277,7 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
   if (live.length === 0) {
     return (
       <View style={{ flex: 1, backgroundColor: c.surface }}>
-        <Map live={[]} selectedId={null} onSelect={fromPin} dimmed pan={{ x: panX, y: panY }} />
+        <Map live={[]} selectedId={null} onSelect={fromPin} mapRef={mapRef} />
         <BottomSheet
           index={index}
           onIndexChange={setIndex}
@@ -383,12 +336,7 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <Map
-        live={live}
-        selectedId={selectedId}
-        onSelect={fromPin}
-        pan={{ x: panX, y: panY }}
-      />
+      <Map live={live} selectedId={selectedId} onSelect={fromPin} mapRef={mapRef} />
       <BottomSheet
         index={index}
         onIndexChange={setIndex}
