@@ -170,10 +170,15 @@ export function ProfileEmpty() {
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 4 }}>
-            {[c.green, c.green, c.hair2, c.hair2].map((bar, i) => (
+            {[
+              { id: 'photo', color: c.green },
+              { id: 'prompt', color: c.green },
+              { id: 'step-3', color: c.hair2 },
+              { id: 'step-4', color: c.hair2 },
+            ].map((step) => (
               <View
-                key={i}
-                style={{ width: 22, height: 3, borderRadius: radius.round, backgroundColor: bar }}
+                key={step.id}
+                style={{ width: 22, height: 3, borderRadius: radius.round, backgroundColor: step.color }}
               />
             ))}
           </View>
