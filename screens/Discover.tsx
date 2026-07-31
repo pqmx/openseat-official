@@ -5,13 +5,13 @@ import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import { RoomCard, RoomPreview, RoomRow, RoomStatus } from '../components/rooms';
 import { BottomSheet } from '../components/sheet';
 import { Eyebrow, MapSearchBar, PrimaryButton, Toggle } from '../components/ui';
+import { useNow } from '../api';
 import {
   feedFor,
   isLive,
   matchesQuery,
   showsExactPin,
-  useNow,
-  you,
+  type Person,
   type Query,
   type Room,
 } from '../data';
@@ -60,7 +60,9 @@ const MapPin = ({
   selected,
   onPress,
 }: {
-  room: Room;
+  // Only ever rendered behind `showsExactPin`, which narrows the coordinates
+  // to plain numbers — a room without a pin can't reach this component.
+  room: Room & { lat: number; lng: number };
   selected: boolean;
   onPress: () => void;
 }) => {
@@ -395,14 +397,15 @@ const Map = ({
           />
         ) : (
           /*
-           * A casual room you haven't joined is discoverable but not findable:
-           * `showsExactPin` is the same rule that sends you to the pre-join
-           * screen, so the map can't contradict it. The room still appears in
-           * the list — only the address is withheld.
+           * A casual room you haven't joined is discoverable but not findable.
+           * The server sends no exact pin at all, so this circle is drawn from
+           * the coarse coordinate every viewer gets — rounded to ~110m, inside
+           * a 150m circle. The room still appears in the list; only the
+           * address is withheld, and now it is withheld by the database.
            */
           <Circle
             key={room.id}
-            center={{ latitude: room.lat, longitude: room.lng }}
+            center={{ latitude: room.approxLat, longitude: room.approxLng }}
             radius={150}
             strokeColor={c.blue}
             strokeWidth={1}
@@ -458,7 +461,15 @@ const FeedItem = ({
  * each other: panning the map can't move the sheet, and moving the sheet can't
  * lose the map's position.
  */
-export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
+export function Discover({
+  rooms,
+  me,
+  viewerYear = me.year,
+}: {
+  rooms: Room[];
+  me: Person;
+  viewerYear?: string;
+}) {
   const { c } = useTheme();
   const now = useNow();
   const [tab, setTab] = useState('Live');
@@ -476,7 +487,7 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
 
   // The query narrows everything at once — map pins, the count and the list —
   // so the map can never show a room the list is hiding.
-  const feed = feedFor(viewerYear, now).filter((r) => matchesQuery(r, query));
+  const feed = feedFor(rooms, viewerYear, now).filter((r) => matchesQuery(r, query));
   const live = feed.filter((r) => isLive(r, now));
   const upcoming = feed.filter((r) => !isLive(r, now));
   const shown = filterFeed(feed, tab, now);
@@ -499,8 +510,14 @@ export function Discover({ viewerYear = you.year }: { viewerYear?: string }) {
 
   /** Flies the camera to a room's pin; `mapPadding` keeps it clear of the sheet. */
   const center = useCallback((room: Room) => {
+    // Falls back to the coarse coordinate for a casual room you haven't joined
+    // — the camera can still fly to its circle, just not to its door.
     mapRef.current?.animateToRegion(
-      { latitude: room.lat, longitude: room.lng, ...closeDelta },
+      {
+        latitude: room.lat ?? room.approxLat,
+        longitude: room.lng ?? room.approxLng,
+        ...closeDelta,
+      },
       380
     );
   }, []);

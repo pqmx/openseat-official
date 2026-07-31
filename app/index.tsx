@@ -1,14 +1,20 @@
 import { Redirect } from 'expo-router';
+import { SignIn } from '../screens/Auth';
+import { useSession } from '../session';
 
 /**
- * Entry route. There is no session yet, so everyone lands in the feed.
- * ponytail: this is the gate — when Google Sign-In is wired it becomes
- * `return signedIn ? <Redirect href="/discover" /> : <GoogleSignIn />`.
- * The hand-drawn `/sign-in` and `/profile-setup` screens were deleted rather
- * than left to rot: Google owns that flow now, and the UCLA-specific fields it
- * can't supply — year, major, dorm — want designing against what it actually
- * returns rather than against a guess.
+ * Entry route, and the session gate this file was always reserved for. Three
+ * states, in order: no session at all, a session whose profile is missing the
+ * year the feed is gated on, and a student who can go straight to the map.
  */
 export default function Index() {
+  const { session, me, loading, needsOnboarding } = useSession();
+
+  if (loading) return null;
+  if (!session) return <SignIn />;
+  // The signup trigger creates the profile in the same transaction as the
+  // user, so this means something is genuinely wrong rather than merely new.
+  if (!me) throw new Error('Signed in, but no profile row came back for this account.');
+  if (needsOnboarding) return <Redirect href="/onboarding" />;
   return <Redirect href="/discover" />;
 }

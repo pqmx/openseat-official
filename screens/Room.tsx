@@ -15,19 +15,26 @@ import {
   StatusStrip,
   TextButton,
 } from '../components/ui';
+import { useNow } from '../api';
 import {
   feedFor,
   hostOf,
+  isIn,
   isLive,
-  personById,
   seatsLeft,
   statusOf,
-  useNow,
-  you,
   type Person,
   type Room as RoomModel,
   type Update,
 } from '../data';
+import { useSession } from '../session';
+
+/**
+ * One shape for all five views, because `app/room/[id].tsx` picks between them
+ * at runtime — they have to be interchangeable. Only the canceled one reads
+ * `rooms`, to offer somewhere else to be.
+ */
+export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[] };
 import { router } from 'expo-router';
 import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
@@ -152,6 +159,7 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
 
 const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label: string }) => {
   const { c } = useTheme();
+  const { me } = useSession();
   return (
     <View style={{ gap: 14 }}>
       <Eyebrow>{label}</Eyebrow>
@@ -161,14 +169,13 @@ const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label:
         </Text>
       ) : (
         updates.map((u, i) => {
-          const author = personById(u.byId);
-          const mine = u.byId === you.id;
+          const mine = u.by.id === me?.id;
           return (
             <NoteItem
               key={u.id}
               text={u.text}
               meta={[
-                mine ? 'You' : author?.name,
+                mine ? 'You' : u.by.name,
                 ago(u.at, now),
                 u.seenBy ? `seen by ${u.seenBy}` : null,
               ]
@@ -185,8 +192,9 @@ const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label:
 };
 
 /** Live room, member view. */
-export function Room({ room }: { room: RoomModel }) {
+export function Room({ room }: RoomScreenProps) {
   const { c } = useTheme();
+  const { me } = useSession();
   const now = useNow();
   const host = hostOf(room);
   return (
@@ -196,7 +204,7 @@ export function Room({ room }: { room: RoomModel }) {
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <RoomStatus status={statusOf(room, now)} />
-            <StateTag label={room.attendees.includes(you.id) ? 'JOINED' : 'OPEN'} />
+            <StateTag label={me && isIn(room, me) ? 'JOINED' : 'OPEN'} />
           </View>
         }
       />
@@ -246,19 +254,19 @@ export function Room({ room }: { room: RoomModel }) {
 }
 
 /** Live room, host view — stats, roster, and the host-only composer. */
-export function RoomHost({ room }: { room: RoomModel }) {
+export function RoomHost({ room }: RoomScreenProps) {
   const { c } = useTheme();
+  const { me } = useSession();
   const now = useNow();
   const [draft, setDraft] = useState('');
   const [posted, setPosted] = useState<RoomModel['updates']>([]);
   const updates = [...posted, ...room.updates];
   const post = () => {
     const text = draft.trim();
-    if (!text) return;
-    setPosted((p) => [
-      { id: `u${Date.now()}`, text, at: new Date(), byId: you.id, seenBy: 0 },
-      ...p,
-    ]);
+    if (!text || !me) return;
+    // ponytail: still local-only — this is the seam an insert into
+    // `room_updates` replaces, along with an RLS policy for the host.
+    setPosted((p) => [{ id: `u${Date.now()}`, text, at: new Date(), by: me, seenBy: 0 }, ...p]);
     setDraft('');
   };
   const stat = (n: string, label: string) => (
@@ -376,16 +384,17 @@ export function RoomHost({ room }: { room: RoomModel }) {
 }
 
 /** Locked room, host view — the approve/decline queue. */
-export function RoomHostRequests({ room }: { room: RoomModel }) {
+export function RoomHostRequests({ room }: RoomScreenProps) {
   const { c } = useTheme();
   const now = useNow();
   const [decidedIds, setDecidedIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState<Person[]>([]);
-  const waiting = room.requests.filter((id) => !decidedIds.has(id));
-  const decide = (id: string, approve: boolean) => {
-    setDecidedIds((v) => new Set(v).add(id));
-    const person = personById(id);
-    if (approve && person) setApproved((v) => [...v, person]);
+  const waiting = room.requests.filter((p) => !decidedIds.has(p.id));
+  // ponytail: local-only, as before. The room now carries the full people, so
+  // an approval is an update of `room_members.state` when writes land.
+  const decide = (person: Person, approve: boolean) => {
+    setDecidedIds((v) => new Set(v).add(person.id));
+    if (approve) setApproved((v) => [...v, person]);
   };
   const here = room.attendees.length + approved.length;
   return (
@@ -431,12 +440,10 @@ export function RoomHostRequests({ room }: { room: RoomModel }) {
               Nobody's waiting. New requests land here.
             </Text>
           ) : (
-            waiting.map((id, i) => {
-              const p = personById(id);
-              if (!p) return null;
+            waiting.map((p, i) => {
               return (
                 <View
-                  key={id}
+                  key={p.id}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -458,13 +465,13 @@ export function RoomHostRequests({ room }: { room: RoomModel }) {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <TextButton
                       label="Decline"
-                      onPress={() => decide(id, false)}
+                      onPress={() => decide(p, false)}
                       style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
                     />
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Approve ${p.name}`}
-                      onPress={() => decide(id, true)}
+                      onPress={() => decide(p, true)}
                       style={{
                         paddingVertical: 7,
                         paddingHorizontal: 13,
@@ -514,7 +521,7 @@ export function RoomHostRequests({ room }: { room: RoomModel }) {
  * Casual room before joining. Small rooms keep their pin private — the map
  * shows an approximate area until you're in.
  */
-export function RoomCasualPreJoin({ room }: { room: RoomModel }) {
+export function RoomCasualPreJoin({ room }: RoomScreenProps) {
   const { c } = useTheme();
   const now = useNow();
   const host = hostOf(room);
@@ -665,12 +672,15 @@ export function RoomCasualPreJoin({ room }: { room: RoomModel }) {
 }
 
 /** Host called it off. No push, no alert colour — you meet this on opening. */
-export function RoomCanceled({ room }: { room: RoomModel }) {
+export function RoomCanceled({ room, rooms }: RoomScreenProps) {
   const { c } = useTheme();
+  const { me } = useSession();
   const now = useNow();
   const host = hostOf(room);
   const last = room.updates[0];
-  const alternative = feedFor(you.year, now).find((r) => r.id !== room.id && isLive(r, now));
+  const alternative = feedFor(rooms, me?.year ?? '', now).find(
+    (r) => r.id !== room.id && isLive(r, now)
+  );
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />

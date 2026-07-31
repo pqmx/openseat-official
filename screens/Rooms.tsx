@@ -1,17 +1,18 @@
 import { Text, View } from 'react-native';
+import { useNow } from '../api';
 import { RoomList } from '../components/rooms';
 import { Body, Eyebrow, PrimaryButton, StatusStrip } from '../components/ui';
-import { isHost, isLive, myRooms, useNow } from '../data';
+import { isHost, isLive, myRooms, type Person, type Room } from '../data';
 import { router } from 'expo-router';
 import { font, type, useTheme } from '../theme';
 
 /** The Rooms tab — what you're hosting and what you've joined. */
-export function Rooms() {
+export function Rooms({ rooms, me }: { rooms: Room[]; me: Person }) {
   const { c } = useTheme();
   const now = useNow();
-  const mine = myRooms(now);
-  const hosting = mine.filter((r) => isHost(r));
-  const joined = mine.filter((r) => !isHost(r));
+  const mine = myRooms(rooms, me, now);
+  const hosting = mine.filter((r) => isHost(r, me));
+  const joined = mine.filter((r) => !isHost(r, me));
   const live = mine.filter((r) => isLive(r, now));
   const later = mine.filter((r) => !isLive(r, now));
 

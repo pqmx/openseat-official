@@ -1,7 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
+import { useRooms } from '../../api';
 import { roomById, viewOf, type RoomView } from '../../data';
 import { NotFound } from '../../screens/NotFound';
 import { Room, RoomCanceled, RoomCasualPreJoin, RoomHost, RoomHostRequests } from '../../screens/Room';
+import { useSession } from '../../session';
 
 /** Five screens behind one route; a throw in any of them stops here. */
 export { RouteError as ErrorBoundary } from '../../screens/NotFound';
@@ -21,10 +23,17 @@ const views = {
  */
 export default function RoomRoute() {
   const { id, view } = useLocalSearchParams<{ id: string; view?: RoomView }>();
-  const room = roomById(id);
+  const { rooms, loading, error } = useRooms();
+  const { me } = useSession();
+
+  if (error) throw error;
+  if (loading || !me) return null;
+
+  const room = roomById(rooms, id);
   // A bad id is a dead link, not room one. Saying so beats rendering somebody
-  // else's room as though it were the one you asked for.
+  // else's room as though it were the one you asked for — and it now also
+  // covers a room the database declined to send you.
   if (!room) return <NotFound />;
-  const Screen = views[view ?? viewOf(room)];
-  return <Screen key={room.id} room={room} />;
+  const Screen = views[view ?? viewOf(room, me)];
+  return <Screen key={room.id} room={room} rooms={rooms} />;
 }

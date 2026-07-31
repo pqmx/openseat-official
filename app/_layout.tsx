@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
 import { Pressable, Text, View, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SessionProvider } from '../session';
 import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../theme';
 
 /**
@@ -54,11 +55,14 @@ export default function RootLayout() {
     // and this app is on the native one.
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeContext.Provider value={value}>
-        <Stack
-          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
-          {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
-          <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
-        </Stack>
+        {/* Identity is ambient, like the theme — every screen reads it. */}
+        <SessionProvider>
+          <Stack
+            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
+            {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
+            <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
+          </Stack>
+        </SessionProvider>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       </ThemeContext.Provider>
     </GestureHandlerRootView>

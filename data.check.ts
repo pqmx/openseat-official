@@ -1,58 +1,97 @@
 import assert from 'node:assert/strict';
 import {
+  feedFor,
   hostOf,
+  isIn,
   matchesQuery,
+  myRooms,
   roomById,
-  rooms,
+  seatsLeft,
   showsExactPin,
   viewOf,
-  you,
+  type Person,
   type Room,
 } from './data.ts';
 
+/**
+ * `data.ts` is pure, so these run on constructed rows rather than fixtures.
+ * The viewer is an argument now — that is the point of the change, and these
+ * assertions are what stop it silently reverting to a single hardcoded person.
+ */
+
+const person = (id: string, over: Partial<Person> = {}): Person => ({
+  id,
+  initials: id.toUpperCase().slice(0, 2),
+  short: id,
+  name: id,
+  year: "'27",
+  major: 'Undeclared',
+  ...over,
+});
+
+const me = person('me');
+const other = person('other');
+
+const room = (over: Partial<Room> = {}): Room => ({
+  id: 'r1',
+  title: 'Sunset set on Lot D roof',
+  place: 'Lot D rooftop, level 5',
+  street: 'Charles E Young Dr',
+  walkMinutes: 4,
+  approxLat: 34.07,
+  approxLng: -118.442,
+  lat: 34.0701,
+  lng: -118.4421,
+  host: other,
+  startsAt: new Date('2026-01-01T20:00:00Z'),
+  capacity: 18,
+  access: 'open',
+  attendees: [],
+  requests: [],
+  updates: [],
+  ...over,
+});
+
 /** `viewOf` decides which of the five drawings `/room/[id]` renders. */
-const room = (over: Partial<Room>): Room => ({ ...rooms[0], hostId: 'other', attendees: [], ...over });
-
-assert.equal(viewOf(room({ canceledAt: new Date() })), 'canceled');
+assert.equal(viewOf(room({ canceledAt: new Date() }), me), 'canceled');
 // Canceled wins even over hosting — the room is gone for everyone.
-assert.equal(viewOf(room({ canceledAt: new Date(), hostId: you.id })), 'canceled');
-assert.equal(viewOf(room({ hostId: you.id, access: 'approve' })), 'requests');
-assert.equal(viewOf(room({ hostId: you.id, access: 'open' })), 'host');
-assert.equal(viewOf(room({ attendees: [you.id] })), 'member');
+assert.equal(viewOf(room({ canceledAt: new Date(), host: me }), me), 'canceled');
+assert.equal(viewOf(room({ host: me, access: 'approve' }), me), 'requests');
+assert.equal(viewOf(room({ host: me, access: 'open' }), me), 'host');
+assert.equal(viewOf(room({ attendees: [me] }), me), 'member');
 // In the room already? You see the pin, casual or not.
-assert.equal(viewOf(room({ attendees: [you.id], casual: true })), 'member');
-assert.equal(viewOf(room({ casual: true })), 'casual');
-assert.equal(viewOf(room({})), 'member');
+assert.equal(viewOf(room({ attendees: [me], casual: true }), me), 'member');
+assert.equal(viewOf(room({ casual: true }), me), 'casual');
+assert.equal(viewOf(room(), me), 'member');
 
-// Every fixture resolves to a screen app/room/[id].tsx can render.
-for (const r of rooms) assert.ok(viewOf(r));
-
-// Every room has a pin, and it lands in Westwood rather than the Gulf of
-// Guinea — a swapped lat/lng or a dropped minus sign is the easy mistake.
-for (const r of rooms) {
-  assert.ok(r.lat > 34.06 && r.lat < 34.076, `${r.id} latitude off campus: ${r.lat}`);
-  assert.ok(r.lng > -118.4535 && r.lng < -118.438, `${r.id} longitude off campus: ${r.lng}`);
-  // North-west of this diagonal is Bel Air and the golf course, not campus —
-  // the corner a plausible-looking pair of numbers actually lands in.
-  assert.ok(!(r.lat > 34.0735 && r.lng < -118.445), `${r.id} is up in Bel Air`);
-}
+// The same room reads differently for two people. This is what a module-level
+// `you` could never express, and why identity had to become an argument.
+const hosted = room({ host: me, attendees: [me] });
+assert.equal(viewOf(hosted, me), 'host');
+assert.equal(viewOf(hosted, other), 'member');
+assert.equal(isIn(hosted, me), true);
+assert.equal(isIn(hosted, other), false);
 
 // A room you can't find is missing, not the first one in the list. The old
 // fallback rendered rooms[0] for any bad id, so a stale link looked like a hit.
-assert.equal(roomById('does-not-exist'), undefined);
-assert.equal(roomById(rooms[0].id)?.id, rooms[0].id);
+const all = [room({ id: 'a' }), room({ id: 'b' })];
+assert.equal(roomById(all, 'does-not-exist'), undefined);
+assert.equal(roomById(all, 'b')?.id, 'b');
 
-// An unknown host must never resolve to the viewer — that used to claim you
-// hosted a room you'd never opened.
-const orphan = room({ hostId: 'nobody' });
-assert.notEqual(hostOf(orphan).id, you.id);
-assert.equal(hostOf(orphan).short, 'Someone');
-assert.equal(hostOf(rooms[0]).id, rooms[0].hostId);
+// The room carries its host, so a room can no longer credit the wrong person.
+assert.equal(hostOf(room({ host: other })).id, 'other');
 
-// Casual rooms keep their address private until you're in the room.
-assert.equal(showsExactPin(room({ casual: true, attendees: [] })), false);
-assert.equal(showsExactPin(room({ casual: true, attendees: [you.id] })), true);
-assert.equal(showsExactPin(room({ casual: false, attendees: [] })), true);
+/*
+ * The pin is now whatever the server sent. `room_pins` has its own RLS policy,
+ * so a casual room you haven't joined arrives with no coordinates at all —
+ * these assert the client reads that absence rather than re-deriving the rule
+ * from `casual`, which is what let the map contradict the database before.
+ */
+assert.equal(showsExactPin(room({ casual: true, lat: undefined, lng: undefined })), false);
+assert.equal(showsExactPin(room({ casual: true })), true, 'a joined casual room has its pin');
+assert.equal(showsExactPin(room({ casual: false })), true);
+// Coarse coordinates always survive, so the map can still draw the circle.
+assert.equal(room({ lat: undefined, lng: undefined }).approxLat, 34.07);
 
 // Search reaches the three fields a room is findable by, and the limits bite.
 const diddy = room({ title: 'Diddy Riese run', place: 'Outside Diddy Riese', street: 'Broxton Ave' });
@@ -63,7 +102,46 @@ assert.equal(matchesQuery(diddy, { text: 'powell' }), false);
 assert.equal(matchesQuery(diddy, { text: '   ' }), true, 'blank text is not a filter');
 assert.equal(matchesQuery(room({ walkMinutes: 6 }), { maxWalk: 6 }), true, 'maxWalk is inclusive');
 assert.equal(matchesQuery(room({ walkMinutes: 7 }), { maxWalk: 6 }), false);
-assert.equal(matchesQuery(room({ capacity: 2, attendees: ['a', 'b'] }), { openOnly: true }), false);
-assert.equal(matchesQuery(room({ capacity: 3, attendees: ['a', 'b'] }), { openOnly: true }), true);
+
+const two = [person('a'), person('b')];
+assert.equal(seatsLeft(room({ capacity: 2, attendees: two })), 0);
+assert.equal(matchesQuery(room({ capacity: 2, attendees: two }), { openOnly: true }), false);
+assert.equal(matchesQuery(room({ capacity: 3, attendees: two }), { openOnly: true }), true);
+
+/*
+ * `feedFor` still filters by year even though `rooms_select` in the database
+ * already refuses to send a room your year can't see. Belt and braces: this
+ * asserts the client half, so the sort stays correct if it ever runs against
+ * rows nobody filtered.
+ */
+const past = new Date('2026-01-01T21:00:00Z');
+const gated = room({ id: 'gated', years: ["'27"] });
+const openToAll = room({ id: 'open' });
+assert.deepEqual(
+  feedFor([gated, openToAll], "'27", past).map((r) => r.id),
+  ['gated', 'open'],
+);
+assert.deepEqual(
+  feedFor([gated, openToAll], "'29", past).map((r) => r.id),
+  ['open'],
+  "a year-restricted room is absent for other years, never greyed out",
+);
+// Canceled rooms leave the feed entirely.
+assert.deepEqual(feedFor([room({ canceledAt: new Date() })], "'27", past), []);
+
+// Live first, then nearest — "live nearby" is a walking decision.
+const far = room({ id: 'far', walkMinutes: 12 });
+const near = room({ id: 'near', walkMinutes: 2 });
+const later = room({ id: 'later', startsAt: new Date('2026-01-02T20:00:00Z') });
+assert.deepEqual(
+  feedFor([later, far, near], "'27", past).map((r) => r.id),
+  ['near', 'far', 'later'],
+);
+
+// The Rooms tab is only what you're actually in.
+assert.deepEqual(
+  myRooms([room({ id: 'mine', attendees: [me] }), room({ id: 'theirs' })], me, past).map((r) => r.id),
+  ['mine'],
+);
 
 console.log('data.ts ok');

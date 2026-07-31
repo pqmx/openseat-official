@@ -15,7 +15,8 @@ import {
   YearChip,
 } from '../components/ui';
 import { router } from 'expo-router';
-import { createRoom } from '../data';
+import { createRoom } from '../api';
+import { classYears } from '../data';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Cancel / STEP n / 2 / action — the bar on both create steps. */
@@ -275,7 +276,9 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
 };
 
 /** Create, step 2 — when and who. */
-const allYears = ["'27", "'28", "'29", 'Grad'];
+// Shared with onboarding, so a room can't be restricted to a year nobody can
+// pick for themselves.
+const allYears = classYears;
 
 export function CreateStep2({ title, place }: { title?: string; place?: string }) {
   const { c } = useTheme();
@@ -293,17 +296,34 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
   const draftTitle = title || 'Sunset set on Lot D roof';
   const draftPlace = place || 'Lot D rooftop';
 
-  const open = () => {
-    const id = createRoom({
-      title: draftTitle,
-      place: draftPlace,
-      // "Now" means live the moment you press it; "Later" is the design's 8:15.
-      startsAt: when === 'Now' ? new Date() : new Date(Date.now() + 60 * 60_000),
-      capacity: cap,
-      access: approve ? 'approve' : 'open',
-      years: yearsOnly && years.length ? years : undefined,
-    });
-    router.replace(`/room/${id}`);
+  const [opening, setOpening] = useState(false);
+  const [failed, setFailed] = useState<string>();
+
+  const open = async () => {
+    setOpening(true);
+    setFailed(undefined);
+    try {
+      const id = await createRoom(
+        {
+          title: draftTitle,
+          place: draftPlace,
+          // "Now" means live the moment you press it; "Later" is the design's 8:15.
+          startsAt: when === 'Now' ? new Date() : new Date(Date.now() + 60 * 60_000),
+          capacity: cap,
+          access: approve ? 'approve' : 'open',
+          years: yearsOnly && years.length ? years : undefined,
+        },
+        // ponytail: campus centre, because Create still can't place a pin.
+        // The map screen already has the coordinate; this is where it goes.
+        34.0701,
+        -118.4445
+      );
+      router.replace(`/room/${id}`);
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : 'Could not open the room.');
+    } finally {
+      setOpening(false);
+    }
   };
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -471,11 +491,22 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
             />
           </View>
           {/*
-            The room is appended to `rooms` and we navigate to its own id, so
-            `viewOf` works out host-versus-requests from the access setting on
-            its own — no `?view=` needed. It still doesn't survive a restart.
+            The room, its pin and your own membership are inserted in one
+            transaction, and we navigate to its real id — so `viewOf` works out
+            host-versus-requests from the access setting on its own, no `?view=`
+            needed. Unlike before, it survives a restart.
           */}
-          <PrimaryButton label="Open the room" onPress={open} />
+          {failed ? (
+            <Text
+              style={{ fontFamily: font.regular, fontSize: 13, color: c.coral, marginBottom: 10 }}>
+              {failed}
+            </Text>
+          ) : null}
+          <PrimaryButton
+            label={opening ? 'Opening…' : 'Open the room'}
+            disabled={opening}
+            onPress={open}
+          />
         </View>
       </Body>
     </View>

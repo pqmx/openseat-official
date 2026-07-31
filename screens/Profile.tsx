@@ -10,7 +10,8 @@ import {
   StatusStrip,
   TextButton,
 } from '../components/ui';
-import { hostedBy, useNow, you, type Person } from '../data';
+import { useNow } from '../api';
+import { hostedBy, type Person, type Room } from '../data';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -35,10 +36,10 @@ const Prompt = ({ label, answer, placeholder }: { label: string; answer: string;
 };
 
 /** Someone else's profile. */
-export function Profile({ person }: { person: Person }) {
+export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
   const { c } = useTheme();
   const now = useNow();
-  const hosts = hostedBy(person.id, now);
+  const hosts = hostedBy(rooms, person.id, now);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -134,19 +135,19 @@ export function Profile({ person }: { person: Person }) {
 }
 
 /** Your own profile the day you sign up — nothing filled in yet. */
-export function ProfileEmpty() {
+export function ProfileEmpty({ me }: { me: Person }) {
   const { c } = useTheme();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <Body contentStyle={{ paddingTop: 8, paddingHorizontal: 22, paddingBottom: 24, gap: 22, flexGrow: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <Avatar initials={you.initials} tone={you.tone} size={92} />
+          <Avatar initials={me.initials} tone={me.tone} size={92} />
           <View style={{ flexShrink: 1 }}>
-            {/* Read from `you` rather than retyped, so it can't drift from the roster. */}
-            <Text style={[name, { color: c.ink }]}>{you.name}</Text>
+            {/* Read from the session rather than retyped, so it can't drift. */}
+            <Text style={[name, { color: c.ink }]}>{me.name}</Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 6 }}>
-              {you.year} · {you.major}
+              {me.year} · {me.major}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.blue, marginTop: 2 }}>
               Verified Bruin · joined today

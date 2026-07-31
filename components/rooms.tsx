@@ -1,16 +1,19 @@
 import { Pressable, Text, View } from 'react-native';
 import {
   hostOf,
+  isIn,
   isLive,
   metaOf,
   rosterOf,
   seatsLeft,
   statusOf,
-  you,
   type Person,
   type Room,
   type Status,
 } from '../data';
+// Identity is ambient here for the same reason the theme is: every one of
+// these reads it, and threading it through each would say nothing.
+import { useSession } from '../session';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 import { PeelCorner } from './icons';
@@ -183,6 +186,7 @@ export const Roster = ({
   showOpenSeats?: boolean;
   limit?: number;
 }) => {
+  const { me } = useSession();
   const named = [...rosterOf(room), ...extra].slice(0, limit);
   const unnamed = room.attendees.length + extra.length - named.length;
   const open = seatsLeft(room) - extra.length;
@@ -192,10 +196,10 @@ export const Roster = ({
         <AvatarCell
           key={p.id}
           initials={p.initials}
-          name={p.id === you.id ? 'You' : p.short}
+          name={p.id === me?.id ? 'You' : p.short}
           tone={p.tone}
-          host={p.id === room.hostId}
-          onPress={() => router.push(p.id === you.id ? '/you' : `/profile/${p.id}`)}
+          host={p.id === room.host.id}
+          onPress={() => router.push(p.id === me?.id ? '/you' : `/profile/${p.id}`)}
         />
       ))}
       {showOpenSeats
@@ -213,8 +217,9 @@ export const Roster = ({
  */
 export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
   const { c } = useTheme();
+  const { me } = useSession();
   const host = hostOf(room);
-  const joined = room.attendees.includes(you.id);
+  const joined = !!me && isIn(room, me);
   const full = seatsLeft(room) === 0;
   const latest = room.updates[0];
   const action = joined

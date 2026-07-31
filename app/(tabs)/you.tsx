@@ -1,1 +1,8 @@
-export { ProfileEmpty as default } from '../../screens/Profile';
+import { ProfileEmpty } from '../../screens/Profile';
+import { useSession } from '../../session';
+
+export default function YouRoute() {
+  const { me } = useSession();
+  if (!me) return null;
+  return <ProfileEmpty me={me} />;
+}
