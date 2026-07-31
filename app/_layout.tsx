@@ -43,7 +43,7 @@ export default function RootLayout() {
   // The design has a light and a dark set; the OS setting picks between them.
   const scheme: Scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const c = scheme === 'dark' ? dark : light;
-  const value = useMemo(() => ({ c, scheme }), [c, scheme]);
+  const value = useMemo(() => ({ c }), [c]);
 
   if (!loaded) return null;
 

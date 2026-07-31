@@ -293,9 +293,6 @@ export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attend
 export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
 export const isHost = (room: Room, person = you) => room.hostId === person.id;
 
-/** A restricted room is absent for other years — never greyed out. */
-export const visibleTo = (room: Room, year: string) => !room.years || room.years.includes(year);
-
 export type Status = { label: string; tone: 'live' | 'soon' | 'off' };
 
 /** The eyebrow above every room, everywhere it appears. */
@@ -344,11 +341,12 @@ export const myRooms = (now: Date) =>
 
 /**
  * Rooms this viewer can see: live ones first and nearest first inside that —
- * "live nearby" is a walking decision — then upcoming by soonest.
+ * "live nearby" is a walking decision — then upcoming by soonest. A
+ * year-restricted room is absent for other years, never greyed out.
  */
 export const feedFor = (year: string, now: Date) =>
   rooms
-    .filter((r) => visibleTo(r, year) && !r.canceledAt)
+    .filter((r) => (!r.years || r.years.includes(year)) && !r.canceledAt)
     .sort((a, b) => {
       const live = Number(isLive(b, now)) - Number(isLive(a, now));
       if (live !== 0) return live;

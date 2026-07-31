@@ -6,6 +6,7 @@ import {
   Chip,
   Eyebrow,
   Field,
+  Footer,
   PrimaryButton,
   StatusLine,
   StatusStrip,
@@ -46,25 +47,6 @@ const WizardBar = ({
       />
       <Eyebrow>{step}</Eyebrow>
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.disabled }}>{right}</Text>
-    </View>
-  );
-};
-
-const Footer = ({ children }: { children: React.ReactNode }) => {
-  const { c } = useTheme();
-  return (
-    <View
-      style={{
-        paddingTop: 14,
-        paddingHorizontal: 22,
-        paddingBottom: 28,
-        borderTopWidth: 1,
-        borderTopColor: c.hair,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-      }}>
-      {children}
     </View>
   );
 };

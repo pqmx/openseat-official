@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
-import { RoomStatus } from '../components/rooms';
+import { RoomRow, RoomStatus } from '../components/rooms';
 import { BackIcon, LockIcon, MoreIcon } from '../components/icons';
 import {
   Avatar,
@@ -9,6 +9,7 @@ import {
   Chip,
   Dot,
   Eyebrow,
+  Footer,
   MapPlate,
   NoteItem,
   PrimaryButton,
@@ -34,15 +35,7 @@ import { router } from 'expo-router';
 import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
-const RoomTopBar = ({
-  center,
-  muted,
-  paddingBottom = 16,
-}: {
-  center: React.ReactNode;
-  muted?: boolean;
-  paddingBottom?: number;
-}) => {
+const RoomTopBar = ({ center, muted }: { center: React.ReactNode; muted?: boolean }) => {
   const { c } = useTheme();
   return (
     <View
@@ -52,7 +45,7 @@ const RoomTopBar = ({
         justifyContent: 'space-between',
         paddingTop: 4,
         paddingHorizontal: 22,
-        paddingBottom,
+        paddingBottom: 16,
       }}>
       <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
         <BackIcon color={c.ink} />
@@ -117,16 +110,14 @@ const SectionHead = ({ label, right }: { label: string; right: string }) => {
 const Roster = ({
   room,
   extra = [],
-  shown = 6,
   showOpenSeats,
 }: {
   room: RoomModel;
   /** Anyone approved during this session. */
   extra?: Person[];
-  shown?: number;
   showOpenSeats?: boolean;
 }) => {
-  const named = [...rosterOf(room), ...extra].slice(0, shown);
+  const named = [...rosterOf(room), ...extra].slice(0, 6);
   const unnamed = room.attendees.length + extra.length - named.length;
   const open = seatsLeft(room) - extra.length;
   return (
@@ -191,36 +182,6 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
         />
       </View>
     </MapPlate>
-  );
-};
-
-const Footer = ({
-  children,
-  raised,
-  gap = 14,
-  column,
-}: {
-  children: React.ReactNode;
-  raised?: boolean;
-  gap?: number;
-  column?: boolean;
-}) => {
-  const { c } = useTheme();
-  return (
-    <View
-      style={{
-        paddingTop: 14,
-        paddingHorizontal: 22,
-        paddingBottom: 28,
-        borderTopWidth: 1,
-        borderTopColor: c.hair,
-        backgroundColor: raised ? c.raised : c.surface,
-        flexDirection: column ? 'column' : 'row',
-        alignItems: column ? 'stretch' : 'center',
-        gap,
-      }}>
-      {children}
-    </View>
   );
 };
 
@@ -811,7 +772,7 @@ export function RoomCanceled({ room }: { room: RoomModel }) {
               gap: 14,
             }}>
             <Eyebrow>STILL LIVE NEARBY</Eyebrow>
-            <RoomRowLink room={alternative} now={now} />
+            <RoomRow room={alternative} now={now} small />
           </View>
         ) : null}
       </Body>
@@ -826,29 +787,3 @@ export function RoomCanceled({ room }: { room: RoomModel }) {
     </View>
   );
 }
-
-/** Local alias so the canceled screen doesn't pull in the whole feed module. */
-const RoomRowLink = ({ room, now }: { room: RoomModel; now: Date }) => {
-  const { c } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={room.title}
-      onPress={() => router.push(`/room/${room.id}`)}>
-      <RoomStatus status={statusOf(room, now)} small />
-      <Text
-        style={{
-          fontFamily: font.bold,
-          fontSize: 17,
-          letterSpacing: em(-0.018, 17),
-          color: c.ink,
-          marginTop: 6,
-        }}>
-        {room.title}
-      </Text>
-      <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 3 }}>
-        {room.place} · {room.walkMinutes} min · {room.attendees.length} here
-      </Text>
-    </Pressable>
-  );
-};

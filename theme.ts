@@ -148,9 +148,6 @@ export const type = {
   } as TextStyle,
 };
 
-export const ThemeContext = createContext<{ c: Colors; scheme: Scheme }>({
-  c: light,
-  scheme: 'light',
-});
+export const ThemeContext = createContext<{ c: Colors }>({ c: light });
 
 export const useTheme = () => useContext(ThemeContext);

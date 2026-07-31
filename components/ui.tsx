@@ -1,4 +1,12 @@
 import { useEffect } from 'react';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   Pressable,
   ScrollView,
@@ -9,14 +17,6 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
 import type { Tone } from '../data';
 import { router, usePathname } from 'expo-router';
 import { font, radius, type, useTheme, type Colors } from '../theme';
@@ -25,17 +25,9 @@ import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon, SearchIcon } fro
 /** The design's 50px status-bar strip; the real OS bar draws into it. */
 export const StatusStrip = () => <View style={{ height: 50 }} />;
 
-export const Eyebrow = ({
-  children,
-  color,
-  style,
-}: {
-  children: React.ReactNode;
-  color?: string;
-  style?: StyleProp<TextStyle>;
-}) => {
+export const Eyebrow = ({ children }: { children: React.ReactNode }) => {
   const { c } = useTheme();
-  return <Text style={[type.eyebrow, { color: color ?? c.mute2 }, style]}>{children}</Text>;
+  return <Text style={[type.eyebrow, { color: c.mute2 }]}>{children}</Text>;
 };
 
 export const Dot = ({
@@ -72,17 +64,13 @@ export const Dot = ({
 
 /** `@keyframes osPulse` — 2.4s, opacity 1 -> .3 -> 1. */
 const PulseDot = ({ color, size = 6 }: { color: string; size?: number }) => {
-  const v = useSharedValue(1);
+  const opacity = useSharedValue(1);
   useEffect(() => {
-    v.value = withRepeat(
-      withSequence(
-        withTiming(0.3, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) })
-      ),
-      -1
-    );
-  }, [v]);
-  const style = useAnimatedStyle(() => ({ opacity: v.value }));
+    const leg = (toValue: number) =>
+      withTiming(toValue, { duration: 1200, easing: Easing.inOut(Easing.ease) });
+    opacity.value = withRepeat(withSequence(leg(0.3), leg(1)), -1);
+  }, [opacity]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View
       style={[
@@ -470,18 +458,16 @@ export const Field = ({
   label,
   focused,
   paddingBottom = 10,
-  gap = 8,
   children,
 }: {
   label: string;
   focused?: boolean;
   paddingBottom?: number;
-  gap?: number;
   children: React.ReactNode;
 }) => {
   const { c } = useTheme();
   return (
-    <View style={{ gap }}>
+    <View style={{ gap: 8 }}>
       <Eyebrow>{label}</Eyebrow>
       <View
         style={{
@@ -717,6 +703,37 @@ export const NoteItem = ({
         }}>
         {meta}
       </Text>
+    </View>
+  );
+};
+
+/** The bar under the fold: a hairline rule, then the screen's actions. */
+export const Footer = ({
+  children,
+  raised,
+  gap = 14,
+  column,
+}: {
+  children: React.ReactNode;
+  raised?: boolean;
+  gap?: number;
+  column?: boolean;
+}) => {
+  const { c } = useTheme();
+  return (
+    <View
+      style={{
+        paddingTop: 14,
+        paddingHorizontal: 22,
+        paddingBottom: 28,
+        borderTopWidth: 1,
+        borderTopColor: c.hair,
+        backgroundColor: raised ? c.raised : c.surface,
+        flexDirection: column ? 'column' : 'row',
+        alignItems: column ? 'stretch' : 'center',
+        gap,
+      }}>
+      {children}
     </View>
   );
 };

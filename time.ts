@@ -16,10 +16,8 @@ export const clock = (d: Date) => {
   const m = d.getMinutes();
   const hour12 = ((h + 11) % 12) + 1;
   const suffix = h < 12 ? 'AM' : 'PM';
-  return m === 0 ? `${hour12} ${suffix}` : `${hour12}:${pad(m)} ${suffix}`;
+  return m === 0 ? `${hour12} ${suffix}` : `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
 };
-
-const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
 /** Midnight of the day `d` falls on — day boundaries, not 24-hour windows. */
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
