@@ -1,4 +1,5 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import { PeelCorner } from '../components/icons';
 import {
   Avatar,
@@ -10,6 +11,7 @@ import {
   StatusLine,
   TabBar,
 } from '../components/ui';
+import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
 const MapLabel = ({ text, color, left, top }: { text: string; color: string; left: number; top: number }) => (
@@ -41,17 +43,22 @@ const MapPin = ({
   sub: string;
 }) => {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
-    <>
-      {/* offset by the 5px glow ring so the 14px dot lands on the design coords */}
-      <View style={{ position: 'absolute', left: left - 5, top: top - 5 }}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={() => go('room')}
+      style={{ position: 'absolute', left: left - 5, top: top - 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {/* the glow ring pads the 14px dot back onto the design coords */}
         <Dot color={c.green} size={14} glow={c.greenGlow} />
+        <View style={{ gap: 1 }}>
+          <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>{title}</Text>
+          <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.mute }}>{sub}</Text>
+        </View>
       </View>
-      <View style={{ position: 'absolute', left: left + 22, top: top - 8, gap: 1 }}>
-        <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>{title}</Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.mute }}>{sub}</Text>
-      </View>
-    </>
+    </Pressable>
   );
 };
 
@@ -76,6 +83,7 @@ const AvatarStack = ({ people, tail }: { people: [string, string, string]; tail:
 
 const FeedTabs = () => {
   const { c } = useTheme();
+  const [active, setActive] = useState('Live');
   return (
     <View
       style={{
@@ -86,20 +94,30 @@ const FeedTabs = () => {
         paddingBottom: 10,
         marginTop: -8,
       }}>
-      <Text
-        style={{
-          fontFamily: font.medium,
-          fontSize: 12.5,
-          color: c.ink,
-          borderBottomWidth: 1.5,
-          borderBottomColor: c.ink,
-          paddingBottom: 9,
-          marginBottom: -11,
-        }}>
-        Live
-      </Text>
-      <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>Tonight</Text>
-      <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>This week</Text>
+      {['Live', 'Tonight', 'This week'].map((t) => (
+        <Pressable
+          key={t}
+          accessibilityRole="button"
+          accessibilityState={{ selected: t === active }}
+          onPress={() => setActive(t)}>
+          <Text
+            style={
+              t === active
+                ? {
+                    fontFamily: font.medium,
+                    fontSize: 12.5,
+                    color: c.ink,
+                    borderBottomWidth: 1.5,
+                    borderBottomColor: c.ink,
+                    paddingBottom: 9,
+                    marginBottom: -11,
+                  }
+                : { fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }
+            }>
+            {t}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 };
@@ -123,8 +141,12 @@ const LiveCard = ({
   peelCorner?: boolean;
 }) => {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={() => go('room')}
       style={{
         paddingVertical: 14,
         paddingHorizontal: 16,
@@ -151,6 +173,7 @@ const LiveCard = ({
         <PrimaryButton
           label="Join"
           height={34}
+          onPress={() => go('room')}
           style={{ paddingHorizontal: 16, borderRadius: radius.join }}
         />
       </View>
@@ -163,7 +186,7 @@ const LiveCard = ({
           hair2={c.hair2}
         />
       ) : null}
-    </View>
+    </Pressable>
   );
 };
 
@@ -182,8 +205,9 @@ const FeedRow = ({
   meta?: string;
 }) => {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
-    <View>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={() => go('room')}>
       <StatusLine label={status} color={statusColor} pulse={pulse} />
       <Text style={[type.cardTitle, { color: c.ink, marginTop: 8 }]}>{title}</Text>
       {meta ? (
@@ -191,7 +215,7 @@ const FeedRow = ({
           {meta}
         </Text>
       ) : null}
-    </View>
+    </Pressable>
   );
 };
 
@@ -341,6 +365,7 @@ export function DiscoverFreshman({ peelCorner = true }: { peelCorner?: boolean }
 /** Nothing live within 15 minutes. */
 export function DiscoverEmpty() {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <MapPlate cellW={100} cellH={120} style={{ height: 300 }}>
@@ -395,7 +420,7 @@ export function DiscoverEmpty() {
           </Text>
         </View>
 
-        <PrimaryButton label="Open a room" />
+        <PrimaryButton label="Open a room" onPress={() => go('create1')} />
 
         <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
           <Text style={[type.eyebrow, { color: c.mute2 }]}>LATER THIS WEEK</Text>

@@ -1,20 +1,21 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
 import { BackIcon, LockIcon, MoreIcon } from '../components/icons';
 import {
   Avatar,
   AvatarCell,
   Body,
-  Caret,
   Chip,
   Dot,
   MapPlate,
   NoteItem,
   PrimaryButton,
-  PulseDot,
   SlotCell,
   StatusStrip,
   StatusLine,
+  TextButton,
 } from '../components/ui';
+import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** The roster the design's `renderVals()` builds. */
@@ -40,6 +41,7 @@ const RoomTopBar = ({
   paddingBottom?: number;
 }) => {
   const { c } = useTheme();
+  const { back, go } = useNav();
   return (
     <View
       style={{
@@ -50,9 +52,18 @@ const RoomTopBar = ({
         paddingHorizontal: 22,
         paddingBottom,
       }}>
-      <BackIcon color={c.ink} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} hitSlop={10}>
+        <BackIcon color={c.ink} />
+      </Pressable>
       {center}
-      <MoreIcon color={muted ? c.mute2 : c.ink} />
+      {/* The design's ⋯ menu has one item that leads anywhere: report. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="More"
+        onPress={() => go('report')}
+        hitSlop={10}>
+        <MoreIcon color={muted ? c.mute2 : c.ink} />
+      </Pressable>
     </View>
   );
 };
@@ -90,6 +101,8 @@ const SectionHead = ({ label, right }: { label: string; right: string }) => {
   );
 };
 
+const address = 'Lot D rooftop, Charles E Young Dr, Los Angeles';
+
 /** Precise-location map card shown once you're in the room. */
 const RoomMap = () => {
   const { c } = useTheme();
@@ -124,7 +137,11 @@ const RoomMap = () => {
             Charles E Young Dr · 4 min walk
           </Text>
         </View>
-        <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.blue }}>Directions</Text>
+        <TextButton
+          label="Directions"
+          onPress={() => Linking.openURL(`http://maps.apple.com/?q=${encodeURIComponent(address)}`)}
+          style={{ fontFamily: font.medium, fontSize: 12.5, color: c.blue }}
+        />
       </View>
     </MapPlate>
   );
@@ -171,6 +188,7 @@ export function Room({
   hostUpdate?: string;
 }) {
   const { c } = useTheme();
+  const { go, reset } = useNav();
   const shown = Math.max(1, Math.min(roster.length, avatarsShown));
   const members = roster.slice(0, shown);
   return (
@@ -200,7 +218,13 @@ export function Room({
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             {members.map((m) => (
-              <AvatarCell key={m.initials} initials={m.initials} name={m.name} host={m.host} />
+              <AvatarCell
+                key={m.initials}
+                initials={m.initials}
+                name={m.name}
+                host={m.host}
+                onPress={() => go('profile')}
+              />
             ))}
             <SlotCell badge={`+${Math.max(0, roomSize - shown)}`} label="more" />
           </View>
@@ -225,7 +249,11 @@ export function Room({
             Only Maya posts updates.{'\n'}You'll get a ping for each one.
           </Text>
         </View>
-        <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}>Leave room</Text>
+        <TextButton
+          label="Leave room"
+          onPress={() => reset('discover')}
+          style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}
+        />
       </Footer>
     </View>
   );
@@ -234,6 +262,24 @@ export function Room({
 /** Live room, host view — stats, roster, and the host-only composer. */
 export function RoomHost() {
   const { c } = useTheme();
+  const { go, reset } = useNav();
+  const [draft, setDraft] = useState('Moving to the east ledge — better view');
+  const [updates, setUpdates] = useState([
+    {
+      text: 'On the roof by the stairwell door — text me if the badge reader is being weird',
+      meta: 'You · 2 min ago · seen by 12',
+    },
+    {
+      text: "Room opened — bring a layer, it's windy up here",
+      meta: 'You · 22 min ago · seen by 14',
+    },
+  ]);
+  const post = () => {
+    const text = draft.trim();
+    if (!text) return;
+    setUpdates((u) => [{ text, meta: 'You · just now · seen by 0' }, ...u]);
+    setDraft('');
+  };
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -290,8 +336,19 @@ export function RoomHost() {
             </View>
           ))}
           <View style={{ marginLeft: 'auto', alignSelf: 'center', flexDirection: 'row', gap: 8 }}>
-            <Chip label="Share" style={{ paddingVertical: 6 }} />
-            <Chip label="End room" color={c.danger} style={{ paddingVertical: 6 }} />
+            <Chip
+              label="Share"
+              style={{ paddingVertical: 6 }}
+              onPress={() =>
+                Share.share({ message: 'Sunset set on Lot D roof — open seat on openseat' })
+              }
+            />
+            <Chip
+              label="End room"
+              color={c.danger}
+              style={{ paddingVertical: 6 }}
+              onPress={() => reset('roomCanceled')}
+            />
           </View>
         </View>
 
@@ -300,27 +357,26 @@ export function RoomHost() {
             <SectionHead label="WHO'S HERE" right="14 here now" />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            <AvatarCell initials="MJ" name="You" host />
-            <AvatarCell initials="AT" name="Ade" />
-            <AvatarCell initials="RK" name="Ro" />
-            <AvatarCell initials="SP" name="Sam" />
-            <AvatarCell initials="DL" name="Dee" />
+            <AvatarCell initials="MJ" name="You" host onPress={() => go('profileEmpty')} />
+            <AvatarCell initials="AT" name="Ade" onPress={() => go('profile')} />
+            <AvatarCell initials="RK" name="Ro" onPress={() => go('profile')} />
+            <AvatarCell initials="SP" name="Sam" onPress={() => go('profile')} />
+            <AvatarCell initials="DL" name="Dee" onPress={() => go('profile')} />
             <SlotCell badge="+9" label="more" />
           </View>
         </View>
 
         <View style={{ gap: 12 }}>
           <Text style={[type.eyebrow, { color: c.mute2 }]}>YOUR UPDATES</Text>
-          <NoteItem
-            text="On the roof by the stairwell door — text me if the badge reader is being weird"
-            meta="You · 2 min ago · seen by 12"
-            accent={c.green}
-          />
-          <NoteItem
-            text="Room opened — bring a layer, it's windy up here"
-            meta="You · 22 min ago · seen by 14"
-            muted
-          />
+          {updates.map((u, i) => (
+            <NoteItem
+              key={u.meta + i}
+              text={u.text}
+              meta={u.meta}
+              accent={i === 0 ? c.green : undefined}
+              muted={i > 0}
+            />
+          ))}
         </View>
       </Body>
 
@@ -329,7 +385,14 @@ export function RoomHost() {
           <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>Pings all 14</Text>
         </View>
-        <View
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          multiline
+          placeholder="Tell the room something"
+          placeholderTextColor={c.faint}
+          selectionColor={c.coral}
+          onSubmitEditing={post}
           style={{
             minHeight: 52,
             paddingVertical: 12,
@@ -338,15 +401,12 @@ export function RoomHost() {
             borderWidth: 1.5,
             borderColor: c.ink,
             backgroundColor: c.surface,
-            flexDirection: 'row',
-            alignItems: 'center',
-          }}>
-          <Text
-            style={{ fontFamily: font.regular, fontSize: 14, color: c.faint, lineHeight: 14 * 1.45 }}>
-            Moving to the east ledge — better view
-          </Text>
-          <Caret />
-        </View>
+            fontFamily: font.regular,
+            fontSize: 14,
+            lineHeight: 14 * 1.45,
+            color: c.ink,
+          }}
+        />
         <View
           style={{
             flexDirection: 'row',
@@ -360,6 +420,7 @@ export function RoomHost() {
           <PrimaryButton
             label="Post update"
             height={38}
+            onPress={post}
             style={{ paddingHorizontal: 20, borderRadius: radius.md }}
           />
         </View>
@@ -371,11 +432,21 @@ export function RoomHost() {
 /** Locked room, host view — the approve/decline queue. */
 export function RoomHostRequests() {
   const { c } = useTheme();
-  const requests = [
+  const { go } = useNav();
+  const [requests, setRequests] = useState([
     { initials: 'NB', name: 'Nia B.', sub: "'28 · Design | Media Arts", tone: 'fill' as const },
     { initials: 'TV', name: 'Theo V.', sub: "'27 · Materials Science", tone: 'park' as const },
     { initials: 'EM', name: 'Emi M.', sub: "'29 · Undeclared", tone: 'water' as const },
-  ];
+  ]);
+  const [approved, setApproved] = useState<{ initials: string; name: string }[]>([]);
+  const cap = 8;
+  const here = 5 + approved.length;
+  const decide = (initials: string, approve: boolean) => {
+    const r = requests.find((q) => q.initials === initials);
+    if (!r) return;
+    setRequests((v) => v.filter((q) => q.initials !== initials));
+    if (approve) setApproved((v) => [...v, { initials: r.initials, name: r.name.split(' ')[0] }]);
+  };
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -391,7 +462,7 @@ export function RoomHostRequests() {
         <View>
           <Text style={[type.display, { color: c.ink }]}>Studio night, 8 people max</Text>
           <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            You're hosting · 5 joined · cap 8 · you approve each request
+            You're hosting · {here} joined · cap {cap} · you approve each request
           </Text>
         </View>
 
@@ -403,9 +474,20 @@ export function RoomHostRequests() {
               justifyContent: 'space-between',
               marginBottom: 4,
             }}>
-            <StatusLine label="JOIN REQUESTS · 3" color={c.coral} />
-            <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>3 seats left</Text>
+            <StatusLine
+              label={`JOIN REQUESTS · ${requests.length}`}
+              color={requests.length ? c.coral : c.mute2}
+              outline={!requests.length}
+            />
+            <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
+              {cap - here} seats left
+            </Text>
           </View>
+          {requests.length === 0 ? (
+            <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute, paddingTop: 14 }}>
+              Nobody's waiting. New requests land here.
+            </Text>
+          ) : null}
           {requests.map((r, i) => (
             <View
               key={r.initials}
@@ -426,10 +508,15 @@ export function RoomHostRequests() {
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}>
-                  Decline
-                </Text>
-                <View
+                <TextButton
+                  label="Decline"
+                  onPress={() => decide(r.initials, false)}
+                  style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Approve ${r.name}`}
+                  onPress={() => decide(r.initials, true)}
                   style={{
                     paddingVertical: 7,
                     paddingHorizontal: 13,
@@ -440,7 +527,7 @@ export function RoomHostRequests() {
                   <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
                     Approve
                   </Text>
-                </View>
+                </Pressable>
               </View>
             </View>
           ))}
@@ -451,15 +538,23 @@ export function RoomHostRequests() {
 
         <View>
           <View style={{ marginBottom: 12 }}>
-            <SectionHead label="WHO'S HERE" right="5 approved" />
+            <SectionHead label="WHO'S HERE" right={`${here} approved`} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            <AvatarCell initials="MJ" name="You" host />
-            <AvatarCell initials="AT" name="Ade" />
-            <AvatarCell initials="RK" name="Ro" />
-            <AvatarCell initials="SP" name="Sam" />
-            <AvatarCell initials="DL" name="Dee" />
-            <SlotCell badge="3" label="open" />
+            <AvatarCell initials="MJ" name="You" host onPress={() => go('profileEmpty')} />
+            <AvatarCell initials="AT" name="Ade" onPress={() => go('profile')} />
+            <AvatarCell initials="RK" name="Ro" onPress={() => go('profile')} />
+            <AvatarCell initials="SP" name="Sam" onPress={() => go('profile')} />
+            <AvatarCell initials="DL" name="Dee" onPress={() => go('profile')} />
+            {approved.map((a) => (
+              <AvatarCell
+                key={a.initials}
+                initials={a.initials}
+                name={a.name}
+                onPress={() => go('profile')}
+              />
+            ))}
+            <SlotCell badge={`${cap - here}`} label="open" />
           </View>
         </View>
       </Body>
@@ -469,7 +564,7 @@ export function RoomHostRequests() {
           style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
           Only you post{'\n'}updates here
         </Text>
-        <PrimaryButton label="Post an update" style={{ flex: 1 }} />
+        <PrimaryButton label="Post an update" onPress={() => go('roomHost')} style={{ flex: 1 }} />
       </Footer>
     </View>
   );
@@ -481,6 +576,7 @@ export function RoomHostRequests() {
  */
 export function RoomCasualPreJoin() {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -591,8 +687,8 @@ export function RoomCasualPreJoin() {
             <SectionHead label="WHO'S GOING" right="2 going" />
           </View>
           <View style={{ flexDirection: 'row', gap: 12 }}>
-            <AvatarCell initials="AT" name="Ade" host />
-            <AvatarCell initials="JC" name="Jos" tone="water" />
+            <AvatarCell initials="AT" name="Ade" host onPress={() => go('profile')} />
+            <AvatarCell initials="JC" name="Jos" tone="water" onPress={() => go('profile')} />
             <SlotCell label="open" />
             <SlotCell label="open" />
           </View>
@@ -618,7 +714,12 @@ export function RoomCasualPreJoin() {
           style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
           Address unlocks{'\n'}after you join
         </Text>
-        <PrimaryButton label="Join · 2 seats left" style={{ flex: 1 }} />
+        {/* Joining is what reveals the exact pin — the joined room is that view. */}
+        <PrimaryButton
+          label="Join · 2 seats left"
+          onPress={() => go('room')}
+          style={{ flex: 1 }}
+        />
       </Footer>
     </View>
   );
@@ -627,6 +728,7 @@ export function RoomCasualPreJoin() {
 /** Host called it off. No push, no alert colour — you only meet this on open. */
 export function RoomCanceled() {
   const { c } = useTheme();
+  const { reset, go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -695,7 +797,10 @@ export function RoomCanceled() {
             gap: 14,
           }}>
           <Text style={[type.eyebrow, { color: c.mute2 }]}>STILL LIVE NEARBY</Text>
-          <View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Hedrick lounge, bad movie"
+            onPress={() => go('room')}>
             <StatusLine label="LIVE · 22M" color={c.green} small />
             <Text
               style={{
@@ -710,12 +815,12 @@ export function RoomCanceled() {
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 3 }}>
               Hedrick Hall, floor 1 · 3 min · 9 here
             </Text>
-          </View>
+          </Pressable>
         </View>
       </Body>
 
       <Footer column gap={12}>
-        <PrimaryButton label="Back to Discover" />
+        <PrimaryButton label="Back to Discover" onPress={() => reset('discover')} />
         <Text
           style={{ fontFamily: font.regular, fontSize: 12.5, color: c.faint, textAlign: 'center' }}>
           This room is closed for good

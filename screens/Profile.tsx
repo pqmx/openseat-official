@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { BackIcon, MenuIcon, MoreIcon } from '../components/icons';
 import {
   Body,
@@ -9,7 +9,9 @@ import {
   StatusLine,
   StatusStrip,
   TabBar,
+  TextButton,
 } from '../components/ui';
+import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** 25px name — only the two profile screens use it. */
@@ -47,8 +49,12 @@ const HostedRoom = ({
   right: string;
 }) => {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={() => go('room')}
       style={{
         flexDirection: 'row',
         alignItems: 'baseline',
@@ -69,7 +75,7 @@ const HostedRoom = ({
         </Text>
       </View>
       <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>{right}</Text>
-    </View>
+    </Pressable>
   );
 };
 
@@ -78,6 +84,7 @@ const interests = ['film photo', 'rooftops', 'house shows', 'thrifting', 'late l
 /** Someone else's profile, fully filled in. */
 export function Profile() {
   const { c } = useTheme();
+  const { back, go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -89,8 +96,16 @@ export function Profile() {
             justifyContent: 'space-between',
             marginBottom: -6,
           }}>
-          <BackIcon color={c.ink} />
-          <MoreIcon color={c.ink} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} hitSlop={10}>
+            <BackIcon color={c.ink} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="More"
+            onPress={() => go('report')}
+            hitSlop={10}>
+            <MoreIcon color={c.ink} />
+          </Pressable>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
@@ -155,9 +170,11 @@ export function Profile() {
             style={{ fontFamily: font.regular, fontSize: 12.5, color: c.faint, lineHeight: 12.5 * 1.45 }}>
             Profiles are visible to{'\n'}verified Bruins only
           </Text>
-          <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-            Report or block
-          </Text>
+          <TextButton
+            label="Report or block"
+            onPress={() => go('report')}
+            style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}
+          />
         </View>
       </Body>
       <TabBar active="you" />
@@ -168,6 +185,7 @@ export function Profile() {
 /** Your own profile the day you sign up — nothing filled in yet. */
 export function ProfileEmpty() {
   const { c } = useTheme();
+  const { go } = useNav();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -250,8 +268,17 @@ export function ProfileEmpty() {
         </View>
 
         <View style={{ marginTop: 'auto', marginBottom: 11, flexDirection: 'row', gap: 10 }}>
-          <PrimaryButton label="Answer a prompt" height={44} style={{ flex: 1 }} />
-          <View
+          {/* No prompt editor is designed — finishing the profile starts a room. */}
+          <PrimaryButton
+            label="Answer a prompt"
+            height={44}
+            onPress={() => go('onboard')}
+            style={{ flex: 1 }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            onPress={() => go('report')}
             style={{
               width: 44,
               height: 44,
@@ -262,7 +289,7 @@ export function ProfileEmpty() {
               justifyContent: 'center',
             }}>
             <MenuIcon color={c.ink2} />
-          </View>
+          </Pressable>
         </View>
       </Body>
       <TabBar active="you" />

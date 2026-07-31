@@ -1,21 +1,33 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { LockIcon, PeelCorner, PinIcon } from '../components/icons';
 import {
   Body,
-  Caret,
   Chip,
   Eyebrow,
   Field,
   PrimaryButton,
   StatusLine,
   StatusStrip,
+  TextButton,
   Toggle,
   YearChip,
 } from '../components/ui';
+import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Cancel / STEP n / 2 / action — the bar on both create steps. */
-const WizardBar = ({ left, step, right }: { left: string; step: string; right: string }) => {
+const WizardBar = ({
+  left,
+  step,
+  right,
+  onLeft,
+}: {
+  left: string;
+  step: string;
+  right: string;
+  onLeft: () => void;
+}) => {
   const { c } = useTheme();
   return (
     <View
@@ -27,7 +39,11 @@ const WizardBar = ({ left, step, right }: { left: string; step: string; right: s
         paddingHorizontal: 22,
         paddingBottom: 18,
       }}>
-      <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>{left}</Text>
+      <TextButton
+        label={left}
+        onPress={onLeft}
+        style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}
+      />
       <Eyebrow>{step}</Eyebrow>
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.disabled }}>{right}</Text>
     </View>
@@ -59,15 +75,22 @@ const PlaceRow = ({
   sub,
   right,
   last,
+  selected,
+  onPress,
 }: {
   title: string;
   sub: string;
   right?: string;
   last?: boolean;
+  selected?: boolean;
+  onPress?: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
       style={{
         flexDirection: 'row',
         alignItems: 'baseline',
@@ -78,7 +101,9 @@ const PlaceRow = ({
         borderBottomColor: c.hairFaint,
       }}>
       <View>
-        <Text style={{ fontFamily: font.medium, fontSize: 14, color: c.ink }}>{title}</Text>
+        <Text style={{ fontFamily: font.medium, fontSize: 14, color: selected ? c.coral : c.ink }}>
+          {title}
+        </Text>
         <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
           {sub}
         </Text>
@@ -86,17 +111,34 @@ const PlaceRow = ({
       {right ? (
         <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.blue }}>{right}</Text>
       ) : null}
-    </View>
+    </Pressable>
   );
 };
 
 /** Create, step 1 — what and where. */
+type Place = { title: string; sub: string; right?: string };
+
+const places: Place[] = [
+  { title: 'Lot D rooftop, level 5', sub: 'Charles E Young Dr · 4 min walk', right: '3 rooms here' },
+  { title: 'Lot D bike racks', sub: 'Charles E Young Dr' },
+];
+
+/** Always offered, however the search goes. */
+const customPin: Place = { title: 'Drop a custom pin', sub: 'Place it on the map yourself' };
+
 export function CreateStep1() {
   const { c } = useTheme();
+  const { go, back } = useNav();
+  const [title, setTitle] = useState('Sunset set on Lot D roof');
+  const [description, setDescription] = useState(
+    "Bringing the speaker + a blanket. Golden hour til it's dark, then we walk for pizza."
+  );
+  const [query, setQuery] = useState('lot d');
+  const [place, setPlace] = useState(places[0].title);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Cancel" step="STEP 1 / 2" right="Next" />
+      <WizardBar left="Cancel" step="STEP 1 / 2" right="Next" onLeft={back} />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 26 }}>
         <Text style={[type.display, { color: c.ink }]}>
           Open a seat.{'\n'}What's happening?
@@ -104,46 +146,69 @@ export function CreateStep1() {
 
         <View style={{ gap: 8 }}>
           <Field label="TITLE" focused>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={[type.cardTitle, { color: c.ink }]}>Sunset set on Lot D roof</Text>
-              <Caret height={17} />
-            </View>
+            <TextInput
+              value={title}
+              onChangeText={(t) => setTitle(t.slice(0, 60))}
+              placeholder="What's happening?"
+              placeholderTextColor={c.faint}
+              selectionColor={c.coral}
+              style={[type.cardTitle, { color: c.ink, padding: 0 }]}
+            />
           </Field>
           <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.faint, alignSelf: 'flex-end' }}>
-            28 / 60
+            {title.length} / 60
           </Text>
         </View>
 
         <Field label="DESCRIPTION" paddingBottom={12}>
-          <Text
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            placeholder="What should people know?"
+            placeholderTextColor={c.faint}
+            selectionColor={c.coral}
             style={{
               fontFamily: font.regular,
               fontSize: 14.5,
               lineHeight: 14.5 * 1.55,
               color: c.ink2,
-            }}>
-            Bringing the speaker + a blanket. Golden hour til it's dark, then we walk for pizza.
-          </Text>
+              padding: 0,
+            }}
+          />
         </Field>
 
         <View style={{ gap: 8 }}>
           <Field label="LOCATION" focused>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
               <PinIcon color={c.mute2} />
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontFamily: font.regular, fontSize: 15, color: c.ink }}>lot d</Text>
-                <Caret />
-              </View>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Where?"
+                placeholderTextColor={c.faint}
+                selectionColor={c.coral}
+                style={{ flex: 1, fontFamily: font.regular, fontSize: 15, color: c.ink, padding: 0 }}
+              />
             </View>
           </Field>
           <View>
-            <PlaceRow
-              title="Lot D rooftop, level 5"
-              sub="Charles E Young Dr · 4 min walk"
-              right="3 rooms here"
-            />
-            <PlaceRow title="Lot D bike racks" sub="Charles E Young Dr" />
-            <PlaceRow title="Drop a custom pin" sub="Place it on the map yourself" last />
+            {[
+              ...places.filter((p) =>
+                p.title.toLowerCase().includes(query.trim().toLowerCase())
+              ),
+              customPin,
+            ].map((p, i, shown) => (
+              <PlaceRow
+                key={p.title}
+                title={p.title}
+                sub={p.sub}
+                right={p.right}
+                last={i === shown.length - 1}
+                selected={p.title === place}
+                onPress={() => setPlace(p.title)}
+              />
+            ))}
           </View>
         </View>
       </Body>
@@ -153,16 +218,24 @@ export function CreateStep1() {
           style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
           Nothing posts{'\n'}until step 2
         </Text>
-        <PrimaryButton label="Next: when & who" height={44} style={{ flex: 1 }} />
+        <PrimaryButton
+          label="Next: when & who"
+          height={44}
+          onPress={() => go('create2')}
+          style={{ flex: 1 }}
+        />
       </Footer>
     </View>
   );
 }
 
-const Stepper = ({ value }: { value: number }) => {
+const Stepper = ({ value, onChange }: { value: number; onChange: (n: number) => void }) => {
   const { c } = useTheme();
-  const box = (glyph: string, active?: boolean) => (
-    <View
+  const box = (glyph: string, active: boolean, to: number) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={glyph === '+' ? 'More people' : 'Fewer people'}
+      onPress={() => onChange(to)}
       style={{
         width: 28,
         height: 28,
@@ -175,11 +248,11 @@ const Stepper = ({ value }: { value: number }) => {
       <Text style={{ fontFamily: font.regular, fontSize: 14, color: active ? c.ink : c.mute }}>
         {glyph}
       </Text>
-    </View>
+    </Pressable>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-      {box('−')}
+      {box('−', value > 2, Math.max(2, value - 1))}
       <Text
         style={{
           fontFamily: font.bold,
@@ -190,7 +263,7 @@ const Stepper = ({ value }: { value: number }) => {
         }}>
         {value}
       </Text>
-      {box('+', true)}
+      {box('+', true, value + 1)}
     </View>
   );
 };
@@ -217,13 +290,24 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
 };
 
 /** Create, step 2 — when and who. */
+const allYears = ["'27", "'28", "'29", 'Grad'];
+
 export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
   const { c } = useTheme();
+  const { back, reset } = useNav();
+  const [when, setWhen] = useState('Now');
+  const [cap, setCap] = useState(18);
+  const [approve, setApprove] = useState(false);
+  const [yearsOnly, setYearsOnly] = useState(true);
+  const [years, setYears] = useState(["'27", "'28"]);
   const divider = { paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: c.hair } as const;
+  const toggleYear = (y: string) =>
+    setYears((v) => (v.includes(y) ? v.filter((x) => x !== y) : [...v, y]));
+  const previewYears = yearsOnly && years.length ? ` · ${years.join('–')}` : '';
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Back" step="STEP 2 / 2" right="Draft" />
+      <WizardBar left="Back" step="STEP 2 / 2" right="Draft" onLeft={back} />
       <Body contentStyle={{ paddingHorizontal: 22, gap: 18, flexGrow: 1 }}>
         <Text style={[type.display, { color: c.ink }]}>When does the{'\n'}room go live?</Text>
 
@@ -254,8 +338,15 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
             </View>
           ))}
           <View style={{ marginLeft: 'auto', alignSelf: 'flex-end', flexDirection: 'row', gap: 7 }}>
-            <Chip label="Now" selected />
-            <Chip label="+1 hr" color={c.mute} />
+            {['Now', '+1 hr'].map((w) => (
+              <Chip
+                key={w}
+                label={w}
+                selected={w === when}
+                color={w === when ? undefined : c.mute}
+                onPress={() => setWhen(w)}
+              />
+            ))}
           </View>
         </View>
 
@@ -263,27 +354,38 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
           <SettingRow
             title="Max people"
             sub="Room closes at the cap"
-            right={<Stepper value={18} />}
+            right={<Stepper value={cap} onChange={setCap} />}
           />
         </View>
 
         <View style={[divider, { gap: 11 }]}>
           <Text style={{ fontFamily: font.medium, fontSize: 15, color: c.ink }}>Who gets in</Text>
           <View style={{ flexDirection: 'row', gap: 7 }}>
-            <View
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: !approve }}
+              onPress={() => setApprove(false)}
               style={{
                 flex: 1,
                 paddingVertical: 10,
                 paddingHorizontal: 12,
                 borderRadius: radius.chip,
-                borderWidth: 1.5,
-                borderColor: c.ink,
+                borderWidth: approve ? 1 : 1.5,
+                borderColor: approve ? c.hair2 : c.ink,
               }}>
-              <Text style={{ fontFamily: font.medium, fontSize: 13, color: c.ink }}>
+              <Text
+                style={
+                  approve
+                    ? { fontFamily: font.regular, fontSize: 13, color: c.mute }
+                    : { fontFamily: font.medium, fontSize: 13, color: c.ink }
+                }>
                 Anyone can join
               </Text>
-            </View>
-            <View
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: approve }}
+              onPress={() => setApprove(true)}
               style={{
                 flex: 1,
                 flexDirection: 'row',
@@ -292,17 +394,24 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
                 paddingVertical: 10,
                 paddingHorizontal: 12,
                 borderRadius: radius.chip,
-                borderWidth: 1,
-                borderColor: c.hair2,
+                borderWidth: approve ? 1.5 : 1,
+                borderColor: approve ? c.ink : c.hair2,
               }}>
-              <LockIcon size={12} color={c.mute2} />
-              <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
+              <LockIcon size={12} color={approve ? c.ink : c.mute2} />
+              <Text
+                style={
+                  approve
+                    ? { fontFamily: font.medium, fontSize: 13, color: c.ink }
+                    : { fontFamily: font.regular, fontSize: 13, color: c.mute }
+                }>
                 Approve requests
               </Text>
-            </View>
+            </Pressable>
           </View>
           <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}>
-            Seats fill instantly until 18. Switch to approving and each request waits on you.
+            {approve
+              ? `Each request waits on you until the ${cap} seats are gone.`
+              : `Seats fill instantly until ${cap}. Switch to approving and each request waits on you.`}
           </Text>
         </View>
 
@@ -310,14 +419,20 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
           <SettingRow
             title="Class years only"
             sub="Other years won't see the room at all"
-            right={<Toggle on />}
+            right={<Toggle on={yearsOnly} onPress={() => setYearsOnly((v) => !v)} />}
           />
-          <View style={{ flexDirection: 'row', gap: 7 }}>
-            <YearChip label="'27" selected />
-            <YearChip label="'28" selected />
-            <YearChip label="'29" />
-            <YearChip label="Grad" />
-          </View>
+          {yearsOnly ? (
+            <View style={{ flexDirection: 'row', gap: 7 }}>
+              {allYears.map((y) => (
+                <YearChip
+                  key={y}
+                  label={y}
+                  selected={years.includes(y)}
+                  onPress={() => toggleYear(y)}
+                />
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={{ marginTop: 'auto', marginBottom: 24, gap: 14 }}>
@@ -343,7 +458,7 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
               Sunset set on Lot D roof
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 4 }}>
-              Lot D rooftop · 7:15 PM · 18 seats · '27–'28
+              Lot D rooftop · {when === 'Now' ? '7:15 PM' : '8:15 PM'} · {cap} seats{previewYears}
             </Text>
             {peelCorner ? (
               <PeelCorner
@@ -356,7 +471,11 @@ export function CreateStep2({ peelCorner = true }: { peelCorner?: boolean }) {
               />
             ) : null}
           </View>
-          <PrimaryButton label="Open the room" />
+          {/* Approving requests is the only thing that changes where you land. */}
+          <PrimaryButton
+            label="Open the room"
+            onPress={() => reset(approve ? 'roomHostRequests' : 'roomHost')}
+          />
         </View>
       </Body>
     </View>

@@ -1,12 +1,15 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import {
   Body,
   Field,
   PrimaryButton,
   Radio,
   StatusStrip,
+  TextButton,
   Toggle,
 } from '../components/ui';
+import { useNav } from '../nav';
 import { em, font, radius, type, useTheme } from '../theme';
 
 const Reason = ({
@@ -14,15 +17,20 @@ const Reason = ({
   sub,
   on,
   last,
+  onPress,
 }: {
   label: string;
   sub?: string;
   on?: boolean;
   last?: boolean;
+  onPress: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ checked: !!on }}
+      onPress={onPress}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -47,9 +55,16 @@ const Reason = ({
           </Text>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 };
+
+const reasons = [
+  { label: 'Harassment or bullying', sub: 'Messages, comments, or behavior in a room' },
+  { label: 'Unsafe or threatening' },
+  { label: 'Spam or scam' },
+  { label: 'Something else' },
+];
 
 /**
  * Report & block, over a dimmed room. The design also desaturates the backdrop
@@ -57,6 +72,10 @@ const Reason = ({
  */
 export function ReportSheet() {
   const { c } = useTheme();
+  const { back } = useNav();
+  const [reason, setReason] = useState(reasons[0].label);
+  const [detail, setDetail] = useState('');
+  const [block, setBlock] = useState(false);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <View style={{ opacity: 0.4 }}>
@@ -129,24 +148,33 @@ export function ReportSheet() {
           </View>
 
           <View>
-            <Reason
-              label="Harassment or bullying"
-              sub="Messages, comments, or behavior in a room"
-              on
-            />
-            <Reason label="Unsafe or threatening" />
-            <Reason label="Spam or scam" />
-            <Reason label="Something else" last />
+            {reasons.map((r, i) => (
+              <Reason
+                key={r.label}
+                label={r.label}
+                sub={r.sub}
+                on={r.label === reason}
+                last={i === reasons.length - 1}
+                onPress={() => setReason(r.label)}
+              />
+            ))}
           </View>
 
           <Field label="WHAT HAPPENED (OPTIONAL)">
-            <Text style={{ fontFamily: font.regular, fontSize: 14, color: c.faint }}>
-              A sentence is enough
-            </Text>
+            <TextInput
+              value={detail}
+              onChangeText={setDetail}
+              multiline
+              placeholder="A sentence is enough"
+              placeholderTextColor={c.faint}
+              selectionColor={c.coral}
+              style={{ fontFamily: font.regular, fontSize: 14, color: c.ink, padding: 0 }}
+            />
           </Field>
 
           <View style={{ gap: 14 }}>
-            <PrimaryButton label="Submit report" danger />
+            {/* ponytail: POSTs to the safety team once there's an API; back for now. */}
+            <PrimaryButton label="Submit report" danger onPress={back} />
             <View
               style={{
                 flexDirection: 'row',
@@ -165,17 +193,18 @@ export function ReportSheet() {
                   You won't see each other's rooms
                 </Text>
               </View>
-              <Toggle on={false} />
+              <Toggle on={block} onPress={() => setBlock((v) => !v)} />
             </View>
-            <Text
+            <TextButton
+              label="Cancel"
+              onPress={back}
               style={{
                 fontFamily: font.regular,
                 fontSize: 13.5,
                 color: c.mute,
                 textAlign: 'center',
-              }}>
-              Cancel
-            </Text>
+              }}
+            />
           </View>
         </Body>
       </View>

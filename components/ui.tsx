@@ -11,6 +11,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { useNav } from '../nav';
 import { font, radius, type, useTheme, type Colors } from '../theme';
 import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon, SearchIcon } from './icons';
 
@@ -205,22 +206,28 @@ export const AvatarCell = ({
   name,
   tone,
   host,
+  onPress,
 }: {
   initials: string;
   name: string;
   tone?: AvatarTone;
   host?: boolean;
+  onPress?: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View style={{ width: 48, alignItems: 'center', gap: 6 }}>
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={name}
+      onPress={onPress}
+      style={{ width: 48, alignItems: 'center', gap: 6 }}>
       <Avatar initials={initials} tone={tone} host={host} />
       <Text
         numberOfLines={1}
         style={{ fontFamily: font.regular, fontSize: 10.5, color: c.mute2, maxWidth: 48 }}>
         {name}
       </Text>
-    </View>
+    </Pressable>
   );
 };
 
@@ -328,6 +335,21 @@ export const PrimaryButton = ({
   );
 };
 
+/** Bare text control — "Cancel", "Leave room", "Decline", "Directions". */
+export const TextButton = ({
+  label,
+  style,
+  onPress,
+}: {
+  label: string;
+  style?: StyleProp<TextStyle>;
+  onPress?: () => void;
+}) => (
+  <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8}>
+    <Text style={style}>{label}</Text>
+  </Pressable>
+);
+
 /** Bordered tag: interests, "Now"/"+1 hr", "Share"/"End room". */
 export const Chip = ({
   label,
@@ -335,16 +357,21 @@ export const Chip = ({
   dashed,
   color,
   style,
+  onPress,
 }: {
   label: string;
   selected?: boolean;
   dashed?: boolean;
   color?: string;
   style?: StyleProp<ViewStyle>;
+  onPress?: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={{ selected }}
+      onPress={onPress}
       style={[
         {
           paddingVertical: 5,
@@ -364,7 +391,7 @@ export const Chip = ({
         }}>
         {label}
       </Text>
-    </View>
+    </Pressable>
   );
 };
 
@@ -374,15 +401,20 @@ export const YearChip = ({
   selected,
   size = 13,
   paddingVertical = 9,
+  onPress,
 }: {
   label: string;
   selected?: boolean;
   size?: number;
   paddingVertical?: number;
+  onPress?: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={{ selected }}
+      onPress={onPress}
       style={[
         { flex: 1, alignItems: 'center', paddingVertical, borderRadius: radius.chip },
         selected
@@ -397,14 +429,17 @@ export const YearChip = ({
         }}>
         {label}
       </Text>
-    </View>
+    </Pressable>
   );
 };
 
-export const Toggle = ({ on }: { on: boolean }) => {
+export const Toggle = ({ on, onPress }: { on: boolean; onPress?: () => void }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole={onPress ? 'switch' : undefined}
+      accessibilityState={{ checked: on }}
+      onPress={onPress}
       style={[
         {
           width: 42,
@@ -424,7 +459,7 @@ export const Toggle = ({ on }: { on: boolean }) => {
           on ? null : { borderWidth: 1, borderColor: c.hair2 },
         ]}
       />
-    </View>
+    </Pressable>
   );
 };
 
@@ -614,7 +649,19 @@ export type Tab = 'discover' | 'rooms' | 'you';
 
 export const TabBar = ({ active }: { active: Tab }) => {
   const { c } = useTheme();
+  const { reset, go } = useNav();
   const tint = (t: Tab) => (t === active ? c.ink : c.faint);
+  const tab = (t: Tab, label: string, Icon: typeof HomeIcon, to: () => void) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: t === active }}
+      onPress={to}
+      style={{ alignItems: 'center', gap: 5 }}>
+      <Icon color={tint(t)} />
+      <Text style={{ fontFamily: font.regular, fontSize: 10, color: tint(t) }}>{label}</Text>
+    </Pressable>
+  );
   return (
     <View
       style={{
@@ -628,17 +675,13 @@ export const TabBar = ({ active }: { active: Tab }) => {
         paddingHorizontal: 26,
         paddingBottom: 16,
       }}>
-      <View style={{ alignItems: 'center', gap: 5 }}>
-        <HomeIcon color={tint('discover')} />
-        <Text style={{ fontFamily: font.regular, fontSize: 10, color: tint('discover') }}>
-          Discover
-        </Text>
-      </View>
-      <View style={{ alignItems: 'center', gap: 5 }}>
-        <ClockIcon color={tint('rooms')} />
-        <Text style={{ fontFamily: font.regular, fontSize: 10, color: tint('rooms') }}>Rooms</Text>
-      </View>
-      <View
+      {tab('discover', 'Discover', HomeIcon, () => reset('discover'))}
+      {/* No rooms-list screen exists — Rooms opens the room you're in. */}
+      {tab('rooms', 'Rooms', ClockIcon, () => reset('room'))}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open a room"
+        onPress={() => go('create1')}
         style={{
           width: 40,
           height: 40,
@@ -649,11 +692,8 @@ export const TabBar = ({ active }: { active: Tab }) => {
           justifyContent: 'center',
         }}>
         <PlusIcon color={c.onCoral} />
-      </View>
-      <View style={{ alignItems: 'center', gap: 5 }}>
-        <PersonIcon color={tint('you')} />
-        <Text style={{ fontFamily: font.regular, fontSize: 10, color: tint('you') }}>You</Text>
-      </View>
+      </Pressable>
+      {tab('you', 'You', PersonIcon, () => reset('profileEmpty'))}
     </View>
   );
 };
