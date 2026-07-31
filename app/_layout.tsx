@@ -8,6 +8,7 @@ import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
 import { Pressable, Text, View, useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../theme';
 
 /**
@@ -48,13 +49,18 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <ThemeContext.Provider value={value}>
-      <Stack
-        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
-        {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
-        <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
-      </Stack>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-    </ThemeContext.Provider>
+    // Discover's sheet is dragged with gesture-handler, which needs a root of
+    // its own on Android. Expo Router only supplies one inside its JS stack,
+    // and this app is on the native one.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeContext.Provider value={value}>
+        <Stack
+          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
+          {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
+          <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
+        </Stack>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      </ThemeContext.Provider>
+    </GestureHandlerRootView>
   );
 }

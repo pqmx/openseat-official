@@ -12,6 +12,7 @@
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -27,7 +28,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts",
+    "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON snap.check.ts",
     "doctor": "npx react-doctor@latest"
   },
   "private": true

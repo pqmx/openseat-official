@@ -10,7 +10,8 @@
   // `node:assert`, and @types/node isn't worth installing for two files.
   "exclude": [
     "time.check.ts",
-    "data.check.ts"
+    "data.check.ts",
+    "snap.check.ts"
   ],
   "include": [
     "**/*.ts",
