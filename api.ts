@@ -54,8 +54,11 @@ const roomCols = `
 const toRoom = (r: any): Room => {
   const members: any[] = r.members ?? [];
   const pin = one<any>(r.pin);
-  const named = (state: string) =>
-    members.filter((m) => m.state === state && m.profile).map((m) => toPerson(m.profile));
+  const named = (state: string) => {
+    const out: Person[] = [];
+    for (const m of members) if (m.state === state && m.profile) out.push(toPerson(m.profile));
+    return out;
+  };
   return {
     id: r.id,
     title: r.title,

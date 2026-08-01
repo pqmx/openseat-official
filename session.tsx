@@ -1,6 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import type { Session } from '@supabase/supabase-js';
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { fetchPerson } from './api';
 import type { Person } from './data';
 import { supabase } from './supabase';
@@ -111,20 +111,20 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     setMe(null);
   }, []);
 
-  return (
-    <Ctx.Provider
-      value={{
-        session,
-        me,
-        loading,
-        // The feed is year-gated in the database, so a profile without one
-        // sees almost nothing. Onboarding is load-bearing, not decorative.
-        needsOnboarding: !!session && !!me && !me.year,
-        signIn,
-        signOut,
-        reloadMe,
-      }}>
-      {children}
-    </Ctx.Provider>
+  const value = useMemo<SessionValue>(
+    () => ({
+      session,
+      me,
+      loading,
+      // The feed is year-gated in the database, so a profile without one
+      // sees almost nothing. Onboarding is load-bearing, not decorative.
+      needsOnboarding: !!session && !!me && !me.year,
+      signIn,
+      signOut,
+      reloadMe,
+    }),
+    [session, me, loading, signIn, signOut, reloadMe],
   );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

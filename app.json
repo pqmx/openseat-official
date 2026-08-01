@@ -27,7 +27,12 @@
     "plugins": [
       "expo-font",
       "expo-router",
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.294827572423-vi9l41sj4t7lr5mljqgb3du41u92h50v"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
