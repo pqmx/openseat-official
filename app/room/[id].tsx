@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useRooms } from '../../api';
-import { roomById, viewOf, type RoomView } from '../../data';
+import { roomById, viewOf } from '../../data';
 import { NotFound } from '../../screens/NotFound';
 import { Room, RoomCanceled, RoomCasualPreJoin, RoomHost, RoomHostRequests } from '../../screens/Room';
 import { useSession } from '../../session';
@@ -17,13 +17,16 @@ const views = {
 } as const;
 
 /**
- * One route, five drawings. `viewOf` decides from the data who you are to the
- * room; `?view=` overrides it for the transitions the fixtures can't express —
- * ending a room you host, or joining one you were only looking at.
+ * One route, five drawings, and `viewOf` decides which from the data alone.
+ *
+ * There used to be a `?view=` override here, because joining and ending a room
+ * were local state and the fixtures had no way to express the transition. Both
+ * are real writes now: joining inserts a membership and the reload comes back
+ * with you in the roster, so the screen changes because the room did.
  */
 export default function RoomRoute() {
-  const { id, view } = useLocalSearchParams<{ id: string; view?: RoomView }>();
-  const { rooms, loading, error } = useRooms();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { rooms, loading, error, reload } = useRooms();
   const { me } = useSession();
 
   if (error) throw error;
@@ -34,6 +37,6 @@ export default function RoomRoute() {
   // else's room as though it were the one you asked for — and it now also
   // covers a room the database declined to send you.
   if (!room) return <NotFound />;
-  const Screen = views[view ?? viewOf(room, me)];
-  return <Screen key={room.id} room={room} rooms={rooms} />;
+  const Screen = views[viewOf(room, me)];
+  return <Screen key={room.id} room={room} rooms={rooms} reload={reload} />;
 }

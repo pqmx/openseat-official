@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Draft, Person, Room, Update } from './data';
+import { Alert } from 'react-native';
+import type { Access, Draft, Person, Room, Update } from './data';
 import { supabase } from './supabase';
 
 /**
@@ -156,7 +157,8 @@ export const useNow = (everyMs = 30_000) => {
 /**
  * Creates the room, its pin and the host's own membership in one transaction.
  * Three inserts from the client could half-succeed and leave a room nobody is
- * in, so it is a single `security definer` function instead.
+ * in, so it is a single `security invoker` function instead — the insert policies
+ * still authorise every row it writes.
  */
 export const createRoom = async (draft: Draft, lat: number, lng: number): Promise<string> => {
   const { data, error } = await supabase.rpc('create_room', {
@@ -171,4 +173,120 @@ export const createRoom = async (draft: Draft, lat: number, lng: number): Promis
   });
   if (error) throw error;
   return data as string;
+};
+
+/**
+ * The writes. Every rule they look like they enforce — who may join, who may
+ * approve, who may post — is a policy in the database; these only choose which
+ * statement to send. A button that sends the wrong one gets refused, not obeyed.
+ *
+ * A refusal is not always an error, which is the trap here. An insert that fails
+ * `with check` raises, but an update or delete whose `using` clause matches no
+ * row simply succeeds having done nothing. So every one of these asks for the
+ * affected rows back and treats an empty result as the refusal it is — otherwise
+ * "Leave room" would cheerfully report success while leaving you in the room.
+ */
+const changed = <T>(
+  { data, error }: { data: T[] | null; error: { message: string } | null },
+  refusal: string,
+) => {
+  if (error) throw error;
+  if (!data?.length) throw new Error(refusal);
+  return data;
+};
+
+/** Join an open room, or ask to join one the host approves. */
+export const joinRoom = async (roomId: string, meId: string, access: Access) =>
+  changed(
+    await supabase
+      .from('room_members')
+      .insert({ room_id: roomId, profile_id: meId, state: access === 'approve' ? 'requested' : 'member' })
+      .select('state'),
+    'That room stopped taking people.',
+  );
+
+export const leaveRoom = async (roomId: string, meId: string) =>
+  changed(
+    await supabase.from('room_members').delete().eq('room_id', roomId).eq('profile_id', meId).select('room_id'),
+    "You can't leave a room you're hosting.",
+  );
+
+export const approveRequest = async (roomId: string, personId: string) =>
+  changed(
+    await supabase
+      .from('room_members')
+      .update({ state: 'member' })
+      .eq('room_id', roomId)
+      .eq('profile_id', personId)
+      .select('profile_id'),
+    'That request could not be approved — the room may be full.',
+  );
+
+export const declineRequest = async (roomId: string, personId: string) =>
+  changed(
+    await supabase.from('room_members').delete().eq('room_id', roomId).eq('profile_id', personId).select('profile_id'),
+    'That request could not be declined.',
+  );
+
+export const postUpdate = async (roomId: string, meId: string, body: string) =>
+  changed(
+    await supabase.from('room_updates').insert({ room_id: roomId, author_id: meId, body }).select('id'),
+    'Only the host can post updates here.',
+  );
+
+export const endRoom = async (roomId: string) =>
+  changed(
+    await supabase.from('rooms').update({ canceled_at: new Date().toISOString() }).eq('id', roomId).select('id'),
+    'Only the host can end this room.',
+  );
+
+/** Both ids are optional on the table, but a report naming neither is refused. */
+export const submitReport = async (report: {
+  reporterId: string;
+  personId?: string;
+  roomId?: string;
+  reason: string;
+  detail?: string;
+  blocked: boolean;
+}) =>
+  changed(
+    await supabase
+      .from('reports')
+      .insert({
+        reporter_id: report.reporterId,
+        profile_id: report.personId ?? null,
+        room_id: report.roomId ?? null,
+        reason: report.reason,
+        detail: report.detail?.trim() || null,
+        blocked: report.blocked,
+      })
+      .select('id'),
+    'That report could not be filed.',
+  );
+
+/**
+ * One in-flight write at a time, and a sentence when it fails. Without this each
+ * of the seven buttons would need its own try/catch, and a double tap would send
+ * the statement twice. Handlers can't reach the router's ErrorBoundary — nothing
+ * is rendering when they run — so a failed write says so where you pressed it.
+ */
+export const useWrite = () => {
+  const [busy, setBusy] = useState(false);
+  const run = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      if (busy) return false;
+      setBusy(true);
+      try {
+        await fn();
+        return true;
+      } catch (e) {
+        Alert.alert("That didn't work", e instanceof Error ? e.message : String(e));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy],
+  );
+  return { busy, run };
 };

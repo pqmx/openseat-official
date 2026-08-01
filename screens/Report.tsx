@@ -9,7 +9,9 @@ import {
   TextButton,
   Toggle,
 } from '../components/ui';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { submitReport, useWrite } from '../api';
+import { useSession } from '../session';
 import { em, font, radius, type, useTheme } from '../theme';
 
 const Reason = ({
@@ -67,41 +69,45 @@ const reasons = [
 ];
 
 /**
- * Report & block, over a dimmed room. The design also desaturates the backdrop
- * (`filter:saturate(.5)`); RN has no filter, so only the opacity carries it.
+ * Report & block. Reached as `/report?room=…&person=…&name=…`: the two ids are
+ * what gets written, `name` only addresses the sheet. Naming somebody you can't
+ * see is pointless rather than dangerous — the row is yours, and `reports_select`
+ * shows it to nobody else.
+ *
+ * The design draws a dimmed, desaturated room behind the sheet because the mock
+ * had no modal to put it behind. Here `presentation: 'formSheet'` leaves the
+ * real screen showing, so the hand-drawn backdrop was two paragraphs of fixture
+ * text pretending to be whatever you were actually looking at. It's gone.
  */
 export function ReportSheet() {
   const { c } = useTheme();
+  const { me } = useSession();
+  const { room, person, name } = useLocalSearchParams<{
+    room?: string;
+    person?: string;
+    name?: string;
+  }>();
+  const { busy, run } = useWrite();
   const [reason, setReason] = useState(reasons[0].label);
   const [detail, setDetail] = useState('');
   const [block, setBlock] = useState(false);
+  const who = name ?? 'this room';
+  const send = () =>
+    me &&
+    run(async () => {
+      await submitReport({
+        reporterId: me.id,
+        personId: person,
+        roomId: room,
+        reason,
+        detail,
+        blocked: block && !!person,
+      });
+      router.back();
+    });
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <View style={{ opacity: 0.4 }}>
-        <StatusStrip />
-        <View style={{ paddingTop: 20, paddingHorizontal: 22 }}>
-          <Text style={[type.display, { color: c.ink }]}>Sunset set on Lot D roof</Text>
-          <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-            Hosted by Maya J · 14 here now
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 12, marginTop: 22 }}>
-            {[0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: radius.round,
-                  backgroundColor: c.fill,
-                  borderWidth: 1,
-                  borderColor: c.hair,
-                }}
-              />
-            ))}
-          </View>
-        </View>
-      </View>
-
+      <StatusStrip />
       <View
         style={{
           flex: 1,
@@ -131,7 +137,7 @@ export function ReportSheet() {
                 letterSpacing: em(-0.018, 21),
                 color: c.ink,
               }}>
-              Report Ade T.
+              Report {who}
             </Text>
             <Text
               style={{
@@ -142,7 +148,8 @@ export function ReportSheet() {
                 marginTop: 7,
                 maxWidth: 300,
               }}>
-              Goes to the openseat safety team only. Ade isn't told who reported them.
+              Goes to the openseat safety team only.{' '}
+              {name ? `${name.split(' ')[0]} isn't told who reported them.` : "The host isn't told who reported it."}
             </Text>
           </View>
 
@@ -172,28 +179,36 @@ export function ReportSheet() {
           </Field>
 
           <View style={{ gap: 14 }}>
-            {/* ponytail: POSTs to the safety team once there's an API; back for now. */}
-            <PrimaryButton label="Submit report" danger onPress={() => router.back()} />
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 14,
-                paddingTop: 16,
-                borderTopWidth: 1,
-                borderTopColor: c.hair,
-              }}>
-              <View>
-                <Text style={{ fontFamily: font.medium, fontSize: 14, color: c.ink }}>
-                  Also block Ade T.
-                </Text>
-                <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
-                  You won't see each other's rooms
-                </Text>
+            <PrimaryButton
+              label={busy ? 'Sending…' : 'Submit report'}
+              danger
+              disabled={busy}
+              onPress={send}
+            />
+            {/* Blocking needs somebody to block, so it only appears when the ⋯
+                named a person rather than just a room. */}
+            {person ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 14,
+                  paddingTop: 16,
+                  borderTopWidth: 1,
+                  borderTopColor: c.hair,
+                }}>
+                <View>
+                  <Text style={{ fontFamily: font.medium, fontSize: 14, color: c.ink }}>
+                    Also block {who}
+                  </Text>
+                  <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
+                    You won't see each other's rooms
+                  </Text>
+                </View>
+                <Toggle on={block} onPress={() => setBlock((v) => !v)} />
               </View>
-              <Toggle on={block} onPress={() => setBlock((v) => !v)} />
-            </View>
+            ) : null}
             <TextButton
               label="Cancel"
               onPress={() => router.back()}

@@ -15,9 +15,19 @@ import {
   StatusStrip,
   TextButton,
 } from '../components/ui';
-import { useNow } from '../api';
+import {
+  approveRequest,
+  declineRequest,
+  endRoom,
+  joinRoom,
+  leaveRoom,
+  postUpdate,
+  useNow,
+  useWrite,
+} from '../api';
 import {
   feedFor,
+  hasAsked,
   hostOf,
   isIn,
   isLive,
@@ -32,15 +42,32 @@ import { useSession } from '../session';
 /**
  * One shape for all five views, because `app/room/[id].tsx` picks between them
  * at runtime — they have to be interchangeable. Only the canceled one reads
- * `rooms`, to offer somewhere else to be.
+ * `rooms`, to offer somewhere else to be. `reload` refetches after a write, so
+ * the screen redraws from what the database now says rather than from a guess.
  */
-export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[] };
+export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[]; reload: () => Promise<void> };
 import { router } from 'expo-router';
 import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
-const RoomTopBar = ({ center, muted }: { center: React.ReactNode; muted?: boolean }) => {
+const RoomTopBar = ({
+  center,
+  muted,
+  room,
+}: {
+  center: React.ReactNode;
+  muted?: boolean;
+  room: RoomModel;
+}) => {
   const { c } = useTheme();
+  const { me } = useSession();
+  // Reporting your own room would only ever name yourself, so from the host's
+  // side the ⋯ reports the room alone.
+  const host = hostOf(room);
+  const target =
+    me && host.id === me.id
+      ? `/report?room=${room.id}`
+      : `/report?room=${room.id}&person=${host.id}&name=${encodeURIComponent(host.name)}`;
   return (
     <View
       style={{
@@ -59,7 +86,7 @@ const RoomTopBar = ({ center, muted }: { center: React.ReactNode; muted?: boolea
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="More"
-        onPress={() => router.push('/report')}
+        onPress={() => router.push(target as never)}
         hitSlop={10}>
         <MoreIcon color={muted ? c.mute2 : c.ink} />
       </Pressable>
@@ -191,20 +218,29 @@ const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label:
   );
 };
 
-/** Live room, member view. */
-export function Room({ room }: RoomScreenProps) {
+/**
+ * Live room, member view — and, because `viewOf` sends non-members of an open
+ * room here too, the view where you join one. The design only ever drew the
+ * joined state; the footer below is the same screen before you're in it.
+ */
+export function Room({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
   const { me } = useSession();
   const now = useNow();
+  const { busy, run } = useWrite();
   const host = hostOf(room);
+  const joined = !!me && isIn(room, me);
+  const asked = !!me && hasAsked(room, me);
+  const left = seatsLeft(room);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
+        room={room}
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <RoomStatus status={statusOf(room, now)} />
-            <StateTag label={me && isIn(room, me) ? 'JOINED' : 'OPEN'} />
+            <StateTag label={joined ? 'JOINED' : asked ? 'ASKED' : 'OPEN'} />
           </View>
         }
       />
@@ -236,39 +272,127 @@ export function Room({ room }: RoomScreenProps) {
       </Body>
 
       <Footer>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
-          <LockIcon color={c.mute2} />
-          <Text
-            style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, lineHeight: 12.5 * 1.4 }}>
-            Only {host.short} posts updates.{'\n'}You'll get a ping for each one.
-          </Text>
-        </View>
-        <TextButton
-          label="Leave room"
-          onPress={() => router.replace('/discover')}
-          style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}
-        />
+        {joined ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
+              <LockIcon color={c.mute2} />
+              <Text
+                style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, lineHeight: 12.5 * 1.4 }}>
+                Only {host.short} posts updates.{'\n'}You'll get a ping for each one.
+              </Text>
+            </View>
+            <TextButton
+              label={busy ? 'Leaving…' : 'Leave room'}
+              // Back to Discover rather than this screen: you're no longer in
+              // the room, and the roster you'd be looking at is no longer yours.
+              onPress={() =>
+                me && run(async () => (await leaveRoom(room.id, me.id), router.replace('/discover')))
+              }
+              style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}
+            />
+          </>
+        ) : (
+          <>
+            <Text
+              style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
+              {asked ? `Waiting on\n${host.short}` : `${room.attendees.length} of ${room.capacity}\nseats taken`}
+            </Text>
+            <PrimaryButton
+              label={
+                asked
+                  ? 'Asked to join'
+                  : !left
+                    ? 'Room is full'
+                    : busy
+                      ? 'Joining…'
+                      : room.access === 'approve'
+                        ? 'Ask to join'
+                        : `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left`
+              }
+              disabled={asked || !left || busy}
+              onPress={() => me && run(async () => (await joinRoom(room.id, me.id, room.access), reload()))}
+              style={{ flex: 1, backgroundColor: asked || !left ? c.disabled : c.coral }}
+            />
+          </>
+        )}
       </Footer>
     </View>
   );
 }
 
-/** Live room, host view — stats, roster, and the host-only composer. */
-export function RoomHost({ room }: RoomScreenProps) {
+/**
+ * The host-only composer. Shared by both host screens rather than copied into
+ * each: whichever one you're looking at, posting an update is the same write.
+ */
+const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
   const { c } = useTheme();
   const { me } = useSession();
-  const now = useNow();
+  const { busy, run } = useWrite();
   const [draft, setDraft] = useState('');
-  const [posted, setPosted] = useState<RoomModel['updates']>([]);
-  const updates = [...posted, ...room.updates];
   const post = () => {
     const text = draft.trim();
     if (!text || !me) return;
-    // ponytail: still local-only — this is the seam an insert into
-    // `room_updates` replaces, along with an RLS policy for the host.
-    setPosted((p) => [{ id: `u${Date.now()}`, text, at: new Date(), by: me, seenBy: 0 }, ...p]);
-    setDraft('');
+    run(async () => {
+      await postUpdate(room.id, me.id, text);
+      setDraft('');
+      await reload();
+    });
   };
+  return (
+    <Footer raised column gap={11}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
+        <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>
+          Pings all {room.attendees.length}
+        </Text>
+      </View>
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        multiline
+        placeholder="Tell the room something"
+        placeholderTextColor={c.faint}
+        selectionColor={c.coral}
+        style={{
+          minHeight: 52,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderRadius: radius.md,
+          borderWidth: 1.5,
+          borderColor: draft ? c.ink : c.hair2,
+          backgroundColor: c.surface,
+          fontFamily: font.regular,
+          fontSize: 14,
+          lineHeight: 14 * 1.45,
+          color: c.ink,
+        }}
+      />
+      <View
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
+          Members can't post here
+        </Text>
+        <PrimaryButton
+          label={busy ? 'Posting…' : 'Post update'}
+          height={38}
+          disabled={!draft.trim() || busy}
+          onPress={post}
+          style={{
+            paddingHorizontal: 20,
+            borderRadius: radius.md,
+            backgroundColor: draft.trim() && !busy ? c.coral : c.disabled,
+          }}
+        />
+      </View>
+    </Footer>
+  );
+};
+
+/** Live room, host view — stats, roster, and the host-only composer. */
+export function RoomHost({ room, reload }: RoomScreenProps) {
+  const { c } = useTheme();
+  const now = useNow();
+  const { run } = useWrite();
   const stat = (n: string, label: string) => (
     <View key={label}>
       <Text style={{ fontFamily: font.bold, fontSize: 19, color: c.ink }}>{n}</Text>
@@ -282,6 +406,7 @@ export function RoomHost({ room }: RoomScreenProps) {
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
+        room={room}
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <RoomStatus status={statusOf(room, now)} />
@@ -315,11 +440,13 @@ export function RoomHost({ room }: RoomScreenProps) {
                 Share.share({ message: `${room.title} — open seat on openseat` })
               }
             />
+            {/* No confirm step: the design doesn't draw one, and the canceled
+                screen it lands on is unambiguous about what just happened. */}
             <Chip
               label="End room"
               color={c.danger}
               style={{ paddingVertical: 6 }}
-              onPress={() => router.replace(`/room/${room.id}?view=canceled`)}
+              onPress={() => run(async () => (await endRoom(room.id), reload()))}
             />
           </View>
         </View>
@@ -331,76 +458,33 @@ export function RoomHost({ room }: RoomScreenProps) {
           <Roster room={room} />
         </View>
 
-        <Updates updates={updates} now={now} label="YOUR UPDATES" />
+        <Updates updates={room.updates} now={now} label="YOUR UPDATES" />
       </Body>
 
-      <Footer raised column gap={11}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
-          <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>
-            Pings all {room.attendees.length}
-          </Text>
-        </View>
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          multiline
-          placeholder="Tell the room something"
-          placeholderTextColor={c.faint}
-          selectionColor={c.coral}
-          style={{
-            minHeight: 52,
-            paddingVertical: 12,
-            paddingHorizontal: 14,
-            borderRadius: radius.md,
-            borderWidth: 1.5,
-            borderColor: draft ? c.ink : c.hair2,
-            backgroundColor: c.surface,
-            fontFamily: font.regular,
-            fontSize: 14,
-            lineHeight: 14 * 1.45,
-            color: c.ink,
-          }}
-        />
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
-            Members can't post here
-          </Text>
-          <PrimaryButton
-            label="Post update"
-            height={38}
-            onPress={post}
-            style={{
-              paddingHorizontal: 20,
-              borderRadius: radius.md,
-              backgroundColor: draft.trim() ? c.coral : c.disabled,
-            }}
-          />
-        </View>
-      </Footer>
+      <UpdateComposer room={room} reload={reload} />
     </View>
   );
 }
 
 /** Locked room, host view — the approve/decline queue. */
-export function RoomHostRequests({ room }: RoomScreenProps) {
+export function RoomHostRequests({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
   const now = useNow();
-  const [decidedIds, setDecidedIds] = useState<Set<string>>(new Set());
-  const [approved, setApproved] = useState<Person[]>([]);
-  const waiting = room.requests.filter((p) => !decidedIds.has(p.id));
-  // ponytail: local-only, as before. The room now carries the full people, so
-  // an approval is an update of `room_members.state` when writes land.
-  const decide = (person: Person, approve: boolean) => {
-    setDecidedIds((v) => new Set(v).add(person.id));
-    if (approve) setApproved((v) => [...v, person]);
-  };
-  const here = room.attendees.length + approved.length;
+  const { busy, run } = useWrite();
+  // No local "decided" set any more: an approval moves the row to `member`, so
+  // the reload takes the person out of `requests` and puts them in the roster.
+  const waiting = room.requests;
+  const decide = (person: Person, approve: boolean) =>
+    run(async () => {
+      await (approve ? approveRequest : declineRequest)(room.id, person.id);
+      await reload();
+    });
+  const here = room.attendees.length;
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
+        room={room}
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
             <RoomStatus status={statusOf(room, now)} />
@@ -471,6 +555,7 @@ export function RoomHostRequests({ room }: RoomScreenProps) {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Approve ${p.name}`}
+                      disabled={busy}
                       onPress={() => decide(p, true)}
                       style={{
                         paddingVertical: 7,
@@ -498,21 +583,14 @@ export function RoomHostRequests({ room }: RoomScreenProps) {
           <View style={{ marginBottom: 12 }}>
             <SectionHead label="WHO'S HERE" right={`${here} approved`} />
           </View>
-          <Roster room={room} extra={approved} showOpenSeats />
+          <Roster room={room} showOpenSeats />
         </View>
       </Body>
 
-      <Footer>
-        <Text
-          style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
-          Only you post{'\n'}updates here
-        </Text>
-        <PrimaryButton
-          label="Post an update"
-          onPress={() => router.replace(`/room/${room.id}?view=host`)}
-          style={{ flex: 1 }}
-        />
-      </Footer>
+      {/* The footer used to be a button that routed to the other host screen to
+          find a composer. An approve-room host never reaches that screen — this
+          is their room screen — so the composer belongs here too. */}
+      <UpdateComposer room={room} reload={reload} />
     </View>
   );
 }
@@ -521,15 +599,19 @@ export function RoomHostRequests({ room }: RoomScreenProps) {
  * Casual room before joining. Small rooms keep their pin private — the map
  * shows an approximate area until you're in.
  */
-export function RoomCasualPreJoin({ room }: RoomScreenProps) {
+export function RoomCasualPreJoin({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
+  const { me } = useSession();
   const now = useNow();
+  const { busy, run } = useWrite();
   const host = hostOf(room);
   const left = seatsLeft(room);
+  const asked = !!me && hasAsked(room, me);
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       <RoomTopBar
+        room={room}
         center={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <RoomStatus status={statusOf(room, now)} />
@@ -660,11 +742,24 @@ export function RoomCasualPreJoin({ room }: RoomScreenProps) {
           style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
           Address unlocks{'\n'}after you join
         </Text>
-        {/* Joining is what reveals the exact pin — the joined room is that view. */}
+        {/* Joining is what reveals the exact pin, and now literally so: the
+            membership row is what `room_pins_select` checks, so the reload
+            comes back carrying coordinates this screen never had. */}
         <PrimaryButton
-          label={left ? `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left` : 'Room is full'}
-          onPress={() => left && router.replace(`/room/${room.id}?view=member`)}
-          style={{ flex: 1, backgroundColor: left ? c.coral : c.disabled }}
+          label={
+            asked
+              ? 'Asked to join'
+              : !left
+                ? 'Room is full'
+                : busy
+                  ? 'Joining…'
+                  : room.access === 'approve'
+                    ? 'Ask to join'
+                    : `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left`
+          }
+          disabled={asked || !left || busy}
+          onPress={() => me && run(async () => (await joinRoom(room.id, me.id, room.access), reload()))}
+          style={{ flex: 1, backgroundColor: asked || !left ? c.disabled : c.coral }}
         />
       </Footer>
     </View>
@@ -684,7 +779,7 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <RoomTopBar muted center={<RoomStatus status={{ label: 'CANCELED', tone: 'off' }} />} />
+      <RoomTopBar muted room={room} center={<RoomStatus status={{ label: 'CANCELED', tone: 'off' }} />} />
       <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 6, gap: 24, flexGrow: 1 }}>
         <View>
           <Text style={[type.display, { color: c.ink2 }]}>

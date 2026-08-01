@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { BackIcon, MenuIcon, MoreIcon } from '../components/icons';
 import { RoomRow } from '../components/rooms';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../components/ui';
 import { useNow } from '../api';
 import { hostedBy, type Person, type Room } from '../data';
+import { useSession } from '../session';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -36,6 +37,10 @@ const Prompt = ({ label, answer, placeholder }: { label: string; answer: string;
 };
 
 /** Someone else's profile. */
+/** The sheet writes from the id; `name` is only so it can address you. */
+const reportHref = (person: Person) =>
+  `/report?person=${person.id}&name=${encodeURIComponent(person.name)}`;
+
 export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
   const { c } = useTheme();
   const now = useNow();
@@ -57,7 +62,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="More"
-            onPress={() => router.push('/report')}
+            onPress={() => router.push(reportHref(person) as never)}
             hitSlop={10}>
             <MoreIcon color={c.ink} />
           </Pressable>
@@ -125,7 +130,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
           </Text>
           <TextButton
             label="Report or block"
-            onPress={() => router.push('/report')}
+            onPress={() => router.push(reportHref(person) as never)}
             style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}
           />
         </View>
@@ -137,6 +142,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
 /** Your own profile the day you sign up — nothing filled in yet. */
 export function ProfileEmpty({ me }: { me: Person }) {
   const { c } = useTheme();
+  const { signOut } = useSession();
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
@@ -238,10 +244,20 @@ export function ProfileEmpty({ me }: { me: Person }) {
             onPress={() => router.push('/create')}
             style={{ flex: 1 }}
           />
+          {/*
+            This opened the report sheet, which on your own profile meant
+            offering to report yourself. Sign-out had no button anywhere in the
+            app — you could get in and never out — so this is where it lives.
+          */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Settings"
-            onPress={() => router.push('/report')}
+            accessibilityLabel="Sign out"
+            onPress={() =>
+              Alert.alert('Sign out?', 'You can sign back in with Google any time.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
+              ])
+            }
             style={{
               width: 44,
               height: 44,

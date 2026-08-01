@@ -10,6 +10,13 @@ Every screen of `openseat v4.dc.html` is built and navigable. `npm run check` ru
 typecheck and the three unit checks (`time.check.ts`, `data.check.ts`, `snap.check.ts` —
 plain node, no test framework).
 
+`policies.check.sql` is the fourth check and the only one `npm run check` can't run, because
+the rules it covers aren't in the app — they're RLS policies in Postgres. Run it with
+`psql "$DATABASE_URL" -f policies.check.sql`; every row must read `ok = t`. It builds its own
+four students and six rooms and ends in `rollback`, so it needs no seed data and leaves
+nothing behind. Every row it writes is attempted **as a signed-in student**, which is the
+only way to test a policy honestly.
+
 Discover is on a real map: `react-native-maps`, with rooms carrying `lat`/`lng`, behind a
 three-stop draggable sheet (`components/sheet.tsx`). Selecting a room fills the sheet with
 `RoomPreview` rather than navigating.
@@ -42,18 +49,28 @@ views come out of `feedFor` / `viewOf`, not out of copies of a screen. Keep it t
 | `/rooms` | `Rooms` |
 | `/you` | `ProfileEmpty` — your own profile |
 | `/profile/[id]` | `Profile` — someone else's; inside `(tabs)`, hidden from the bar |
-| `/room/[id]` | one of five, picked by `viewOf`; `?view=` overrides for transitions the fixtures can't express |
+| `/room/[id]` | one of five, picked by `viewOf` — and only by `viewOf`; the `?view=` override is gone |
 | `/create`, `/create/details` | `CreateStep1` / `CreateStep2`; step 1 passes `title`/`place` as params |
-| `/report` | `ReportSheet`, presented as a `formSheet` |
+| `/report?room=&person=&name=` | `ReportSheet`, presented as a `formSheet`; the ids are written, `name` only addresses the sheet |
 | anything else | `NotFound` — including `/room/[id]` for an id that isn't a room |
 
 `(tabs)/_layout.tsx` supplies routing only — the tab bar itself is `TabBar` from `ui.tsx`,
 rendered once via the `tabBar` prop, with the active slot read off the pathname.
 
 Source of truth is `openseat v4.dc.html` (v1–v3 and `Openseat Design System.dc.html` are older).
-Two deliberate departures, both because the mock was worse on a device: the create button is a
-labelled tab slot rather than an off-centre floating one, and status labels read `LIVE · 22 MIN`
-rather than `LIVE · 22M`.
+Four deliberate departures, all because the mock was worse on a device:
+
+- the create button is a labelled tab slot rather than an off-centre floating one;
+- status labels read `LIVE · 22 MIN` rather than `LIVE · 22M`;
+- the report sheet's dimmed backdrop is gone. The mock drew a fake room behind the sheet
+  because it had no modal to put one behind; `presentation: 'formSheet'` leaves the real
+  screen showing, so the backdrop was fixture text pretending to be whatever you were
+  actually looking at;
+- the member room screen has a join footer. The design only ever drew that screen joined, but
+  `viewOf` sends non-members of an open room there, so it has to be the screen you join from.
+
+The ⋯ on your own profile used to open the report sheet — offering to report yourself. It
+signs you out now, which had no button anywhere in the app before.
 
 ## Backend
 
@@ -62,6 +79,36 @@ Supabase project `openseat-app` (`odewffansajnakyeyzvu`). Keys in `.env` — see
 `profiles`, `rooms`, `room_pins`, `room_members`, `room_updates`, `reports`. The app model's
 `attendees` and `requests` are one `room_members` table with a `state`; the host holds a
 membership row too, so `is_member` needs no special case for them.
+
+**Every write is a policy, not a button.** Join, ask-to-join, approve, decline, leave, post
+update, end room and report are real inserts, updates and deletes; what each is allowed to do
+is decided in `public`'s RLS policies and the `private` helpers behind them, never in the
+screen. A screen that sends the wrong statement gets refused, not obeyed.
+
+Two consequences worth knowing before you touch any of it:
+
+- **A refusal is often silent.** An insert that fails `with check` raises, but an update or
+  delete whose `using` clause matches nothing simply succeeds having touched no row. Every
+  write in `api.ts` therefore asks for the affected rows back and treats an empty result as
+  the refusal it is (`changed()`). Skip that and "Leave room" reports success while leaving
+  you in the room.
+- **Never read a row's own columns through an RLS-filtered subselect to decide access.**
+  `room_members_insert_self` first did exactly that, and for a room you couldn't see the
+  subselect returned null — which, for `years`, means "any year", so hiding the room is what
+  let you into it. `private.can_see_room(uuid)` is security definer for this reason. There is
+  a regression case for it in `policies.check.sql`.
+
+Column grants do what RLS can't: `authenticated` may update only `rooms.canceled_at`,
+`room_members.state`, and `profiles.year/major/dorm`. So "end the room" can't become
+"rewrite the room", and onboarding can't become "rename yourself to somebody else".
+
+Blocking is real and symmetric — `private.blocked_with()` is folded into `can_see_room`, so a
+block hides that person's rooms in both directions, which is what the report sheet promises.
+
+Reports are readable by their author and nobody else, so triage runs as the service role:
+`private.report_queue` is a view of untriaged reports with both sides named, and
+`reports.reviewed_at` / `reviewed_note` are where handling gets recorded. It is not granted to
+`authenticated` — the app cannot read it.
 
 **Two rules the client used to enforce are now the database's.** Don't move them back:
 
@@ -79,16 +126,17 @@ from Google's name. `create_room` is a `security invoker` function so the insert
 authorise it; it exists for atomicity — room, pin and host membership in one transaction.
 
 The demo rows (9 students, 8 rooms) are transcribed from the old fixtures. **Delete them before
-launch.**
+launch** — `delete from auth.users where id::text like '00000000-0000-4000-8000-%'` cascades to
+everything else. `policies.check.sql` no longer depends on them.
 
 ## Not built
 
-**Writes, other than create-room and onboarding.** Join, ask-to-join, approve/decline, post
-update, leave, end room and submit report are all still local `useState` or a `?view=` URL
-param — they look like they work and don't. The insert policies are deliberately narrow (you
-may only insert yourself into a room you host), so adding a button means adding a policy.
+No realtime — `useNow` still polls every 30s, and a write reloads by refetching. No push
+notifications, which is what "You'll get a ping for each one" on the room screen is still
+promising. No rate limit on `create_room`: one account can open rooms in a loop.
 
-No realtime — `useNow` still polls every 30s. No push notifications.
+No account deletion or data export, which is a real gap for an app that stores which dorm a
+student sleeps in.
 
 **No photos.** People are initials (`Avatar`) everywhere, including both profile screens.
 There's no upload path, so a photo placeholder was a promise the app couldn't keep.

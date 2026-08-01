@@ -97,6 +97,13 @@ export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attend
 export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
 export const isHost = (room: Room, person: Person) => room.host.id === person.id;
 export const isIn = (room: Room, person: Person) => room.attendees.some((p) => p.id === person.id);
+/**
+ * Waiting on the host. Only the host and the requester are sent `requested`
+ * rows, so for everyone else this is false because the row isn't there — which
+ * is the point: a request nobody approved isn't anybody else's business.
+ */
+export const hasAsked = (room: Room, person: Person) =>
+  room.requests.some((p) => p.id === person.id);
 
 /**
  * Whether the map may drop a pin. This used to re-derive the rule client-side
@@ -150,8 +157,9 @@ export type RoomView = 'member' | 'host' | 'requests' | 'casual' | 'canceled';
 /**
  * Which of the five a room opens as. The design draws five screens and the
  * difference is entirely who you are to the room, so decide it in one place.
- * `?view=` overrides it for transitions the fixtures can't express — see
- * app/room/[id].tsx.
+ * This is now the only thing that decides: the `?view=` override the route used
+ * to accept is gone, because joining and ending a room are real writes and the
+ * refetch already changes who you are to the room.
  */
 export const viewOf = (room: Room, me: Person): RoomView => {
   if (room.canceledAt) return 'canceled';

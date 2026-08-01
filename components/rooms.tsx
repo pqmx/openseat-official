@@ -7,7 +7,6 @@ import {
   rosterOf,
   seatsLeft,
   statusOf,
-  type Person,
   type Room,
   type Status,
 } from '../data';
@@ -176,20 +175,20 @@ export const RoomRow = ({
  */
 export const Roster = ({
   room,
-  extra = [],
   showOpenSeats,
   limit = 6,
 }: {
   room: Room;
-  /** Anyone approved during this session. */
-  extra?: Person[];
   showOpenSeats?: boolean;
   limit?: number;
 }) => {
   const { me } = useSession();
-  const named = [...rosterOf(room), ...extra].slice(0, limit);
-  const unnamed = room.attendees.length + extra.length - named.length;
-  const open = seatsLeft(room) - extra.length;
+  // There used to be an `extra` prop for people approved during this session,
+  // because approving was local state. It's a write now, so the roster the
+  // refetch brings back already has them in it.
+  const named = rosterOf(room).slice(0, limit);
+  const unnamed = room.attendees.length - named.length;
+  const open = seatsLeft(room);
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
       {named.map((p) => (
