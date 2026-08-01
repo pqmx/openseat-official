@@ -81,9 +81,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
               {person.year} · {person.major}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-              {[person.dorm, `${hosts.length} ${hosts.length === 1 ? 'room' : 'rooms'} hosted`]
-                .filter(Boolean)
-                .join(' · ')}
+              {hosts.length} {hosts.length === 1 ? 'room' : 'rooms'} hosted
             </Text>
           </View>
         </View>

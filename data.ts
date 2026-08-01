@@ -23,7 +23,6 @@ export type Person = {
   year: string;
   major: string;
   tone?: Tone;
-  dorm?: string;
   interests?: string[];
   /** The design's two profile prompts. */
   prompts?: { q: string; a: string }[];

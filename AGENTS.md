@@ -44,7 +44,7 @@ views come out of `feedFor` / `viewOf`, not out of copies of a screen. Keep it t
 | URL | Screen |
 | --- | --- |
 | `/` | the session gate: `SignIn`, else `/onboarding`, else `/discover` |
-| `/onboarding` | year/major/dorm — the fields Google doesn't return |
+| `/onboarding` | year/major — the fields Google doesn't return |
 | `/discover`, `/discover?year='29` | `Discover`; the year is the viewer, not a second screen |
 | `/rooms` | `Rooms` |
 | `/you` | `ProfileEmpty` — your own profile |
@@ -99,8 +99,13 @@ Two consequences worth knowing before you touch any of it:
   a regression case for it in `policies.check.sql`.
 
 Column grants do what RLS can't: `authenticated` may update only `rooms.canceled_at`,
-`room_members.state`, and `profiles.year/major/dorm`. So "end the room" can't become
-"rewrite the room", and onboarding can't become "rename yourself to somebody else".
+`room_members.state`, and `profiles.year/major`. So "end the room" can't become "rewrite the
+room", and onboarding can't become "rename yourself to somebody else".
+
+`profiles` has no `dorm`. It was free text from onboarding, shown on other people's profiles
+and readable by anyone who could reach one — and unlike `year` and `major` it named a building
+a specific person sleeps in, while feeding nothing: no filter, no matching, no distance. Don't
+add it back, and apply the same test to any field like it.
 
 Blocking is real and symmetric — `private.blocked_with()` is folded into `can_see_room`, so a
 block hides that person's rooms in both directions, which is what the report sheet promises.
@@ -139,8 +144,8 @@ No realtime — `useNow` still polls every 30s, and a write reloads by refetchin
 notifications, which is what "You'll get a ping for each one" on the room screen is still
 promising. No rate limit on `create_room`: one account can open rooms in a loop.
 
-No account deletion or data export, which is a real gap for an app that stores which dorm a
-student sleeps in.
+No account deletion or data export. Less sharp now that `dorm` is gone, but a profile still
+carries a name, class year, major, interests and free-text prompts.
 
 **No photos.** People are initials (`Avatar`) everywhere, including both profile screens.
 There's no upload path, so a photo placeholder was a promise the app couldn't keep.

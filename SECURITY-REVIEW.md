@@ -127,14 +127,22 @@ and `policies.check.sql` still passes 28/28 against the empty database.
 
 One account can still open rooms in a loop. Needs infrastructure, not a policy.
 
-## Your call
+## Resolved by deletion
 
-**`dorm` is rendered on other people's profiles** (`screens/Profile.tsx:79`), so exposing it
-to anyone who shares a room with you is the design working as drawn, not a bug — I left it
-alone. It is also the field that makes finding #1 more than a privacy nuisance: it says which
-building a stranger sleeps in. If you want it off the public profile, the pattern is already
-in this codebase — `room_pins` exists because RLS is row-level and can't hide one column. Move
-`dorm` to a `profile_private` table with its own policy and the same argument applies.
+**`dorm` is gone** — dropped from `profiles`, from `Person`, from onboarding and from the
+profile screen. It was the field that made finding #1 more than a privacy nuisance: it named
+the building a stranger sleeps in, it was readable by anyone who could reach the profile, and
+it fed nothing — no filter, no matching, no distance.
+
+Worth recording the reasoning, because it generalises. The options were to guard it (move it
+to a `profile_private` table behind its own policy, the way `room_pins` guards exact
+coordinates) or to remove it. Guarding is the right answer for a field that earns its keep;
+`room_pins` exists because the map genuinely needs coordinates. `dorm` earned nothing, so the
+cheaper and stronger answer was to delete it: a column that isn't there can't be leaked by the
+next policy someone writes. Nothing was lost — no account had ever set one.
+
+The remaining exposure from finding #1 is now name, class year, major, interests and prompts,
+which is a directory of the kind the product is visibly meant to be.
 
 ## Corrections to my first pass
 

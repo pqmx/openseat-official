@@ -108,7 +108,6 @@ export function Onboarding() {
   const { me, reloadMe } = useSession();
   const [year, setYear] = useState<string>();
   const [major, setMajor] = useState('');
-  const [dorm, setDorm] = useState('');
   const [focus, setFocus] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string>();
@@ -120,7 +119,7 @@ export function Onboarding() {
     setBusy(true);
     setFailed(undefined);
     try {
-      await saveProfile(me.id, { year, major, dorm });
+      await saveProfile(me.id, { year, major });
       await reloadMe();
       router.replace('/discover');
     } catch (e) {
@@ -170,18 +169,6 @@ export function Onboarding() {
             onFocus={() => setFocus('major')}
             onBlur={() => setFocus(undefined)}
             placeholder="Architecture"
-            placeholderTextColor={c.faint}
-            style={input}
-          />
-        </Field>
-
-        <Field label="DORM — OPTIONAL" focused={focus === 'dorm'}>
-          <TextInput
-            value={dorm}
-            onChangeText={setDorm}
-            onFocus={() => setFocus('dorm')}
-            onBlur={() => setFocus(undefined)}
-            placeholder="Rieber Hall"
             placeholderTextColor={c.faint}
             style={input}
           />

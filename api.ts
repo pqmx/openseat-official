@@ -14,7 +14,7 @@ import { supabase } from './supabase';
  * you were allowed to see it.
  */
 
-const personCols = 'id, name, short, initials, year, major, dorm, tone, interests, prompts';
+const personCols = 'id, name, short, initials, year, major, tone, interests, prompts';
 
 // PostgREST returns an embedded one-to-one as an object, but a to-many as an
 // array, and the shape depends on how it reads the constraint. Take either.
@@ -28,7 +28,6 @@ const toPerson = (r: any): Person => ({
   name: r.name,
   year: r.year ?? '',
   major: r.major ?? '',
-  dorm: r.dorm ?? undefined,
   tone: r.tone ?? undefined,
   interests: r.interests?.length ? r.interests : undefined,
   prompts: r.prompts?.length ? r.prompts : undefined,
@@ -104,14 +103,13 @@ export const fetchPerson = async (id: string): Promise<Person | undefined> => {
  */
 export const saveProfile = async (
   id: string,
-  patch: { year: string; major?: string; dorm?: string },
+  patch: { year: string; major?: string },
 ) => {
   const { error } = await supabase
     .from('profiles')
     .update({
       year: patch.year,
       major: patch.major?.trim() || null,
-      dorm: patch.dorm?.trim() || null,
     })
     .eq('id', id);
   if (error) throw error;
