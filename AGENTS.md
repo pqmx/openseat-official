@@ -125,9 +125,13 @@ gated to `@ucla.edu` / `@g.ucla.edu` by a trigger on `auth.users`, which also se
 from Google's name. `create_room` is a `security invoker` function so the insert policies
 authorise it; it exists for atomicity — room, pin and host membership in one transaction.
 
-The demo rows (9 students, 8 rooms) are transcribed from the old fixtures. **Delete them before
-launch** — `delete from auth.users where id::text like '00000000-0000-4000-8000-%'` cascades to
-everything else. `policies.check.sql` no longer depends on them.
+**The database is empty.** The 9 demo students and 8 demo rooms transcribed from the old
+fixtures were deleted on 2026-08-01, along with the `auth.users` rows behind them; nothing has
+signed in since. So every screen opens on its empty state until a real UCLA account creates
+something, and Discover having no pins is correct rather than broken.
+
+Nothing in the repo depends on that data: `policies.check.sql` builds its own four students
+and six rooms and rolls them back.
 
 ## Not built
 

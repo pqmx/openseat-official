@@ -99,28 +99,29 @@ symmetric, folded into `can_see_room`.
 
 ## Still yours to do
 
-### 6. Email/password sign-up may be enabled — MEDIUM, console only
+## Closed since
 
-The advisor reports leaked-password protection off, which only applies if the Email provider
-is on. All 9 existing users are `google`. If email sign-up is enabled *and* auto-confirm is
-on, anyone can claim `someone@ucla.edu` without owning the inbox — the trigger checks the
-domain, not ownership — and walk into the year-gated feed.
+### 6. Email/password sign-up — RESOLVED, no action needed
 
-Supabase → Auth → Providers → disable **Email**. The app only calls `signInWithIdToken`, so
-nothing depends on it, and it clears the advisor too. I can't change auth config over SQL.
+Probed directly: `POST /auth/v1/signup` returns `email_provider_disabled`. Google is the only
+way in, so nobody can claim a `@ucla.edu` address they don't own, and the leaked-password
+advisor is moot.
 
-### 7. Demo rows are still live
+Worth keeping straight *why*, because it governs any future change: the protection isn't that
+the app only offers Google. An attacker never opens the app — they POST to the auth endpoint
+with the publishable key, which ships in the bundle. What protects the year-gated feed is that
+the **backend** refuses every method except Google. Turn the Email provider on and the
+Google-only UI stops meaning anything, because the signup trigger checks the email's domain,
+not whether the person owns the inbox.
 
-9 profiles, 8 rooms, and the 9 synthetic `auth.users` behind them — sequential ids, one shared
-`created_at`, never signed in. Deleting them is one statement:
+### 7. Demo rows — DELETED 2026-08-01
 
-```sql
-delete from auth.users where id::text like '00000000-0000-4000-8000-%';
-```
+`delete from auth.users where id::text like '00000000-0000-4000-8000-%'`, which cascaded to
+every profile, room, membership, pin and update. All seven tables are empty; the schema, the
+15 policies, the 8 `private` helpers, the report queue view and the signup trigger are intact,
+and `policies.check.sql` still passes 28/28 against the empty database.
 
-It cascades to every profile, room, membership, pin and update, which is the whole database —
-so it wants a deliberate hand on it rather than mine. `policies.check.sql` builds its own
-fixtures and no longer depends on these.
+## Still yours to do
 
 ### 8. No rate limit on `create_room`
 
