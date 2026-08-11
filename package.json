@@ -37,7 +37,7 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:device": "xcodebuild -workspace ios/openseatscaffold.xcworkspace -scheme openseatscaffold -configuration Debug -destination 'id=00008150-001854563485401C' -derivedDataPath ios/build -allowProvisioningUpdates build",
+    "ios:device": "W=$(ls -d ios/*.xcworkspace) && xcodebuild -workspace \"$W\" -scheme \"$(basename \"$W\" .xcworkspace)\" -configuration Debug -destination 'id=00008150-001854563485401C' -derivedDataPath ios/build -allowProvisioningUpdates build",
     "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON snap.check.ts",
     "check:policies": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f policies.check.sql",
     "doctor": "npx react-doctor@latest"

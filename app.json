@@ -11,7 +11,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.pqmx.openseat",
       "usesAppleSignIn": true,
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.pqmx.openseat",
@@ -33,17 +36,17 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.294827572423-02lp0nn1alibhg0jeb8h9u2ifsarbvc9"
         }
-      ],
-      [
-        "@sentry/react-native/expo",
-        {
-          "organization": "openseat",
-          "project": "openseat"
-        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3b45a605-6a80-4c99-8bd4-749b9acd2c78"
+      }
+    },
+    "owner": "seedoilcrashout"
   }
 }
