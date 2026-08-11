@@ -92,6 +92,7 @@ export function ReportSheet() {
   const [detail, setDetail] = useState('');
   const [block, setBlock] = useState(false);
   const who = name ?? 'this room';
+  const blocking = block && !!person;
   const send = () =>
     me &&
     run(async () => {
@@ -101,9 +102,21 @@ export function ReportSheet() {
         roomId: room,
         reason,
         detail,
-        blocked: block && !!person,
+        blocked: blocking,
       });
-      router.back();
+      // A plain report changes nothing you can see, so going back is right.
+      //
+      // A block is the opposite: `private.blocked_with` is folded into
+      // `can_see_room`, so the screen directly behind this sheet — their profile,
+      // or a room they host — is the one thing the block just made unreadable.
+      // Going back to it lands on "No room at that address," which reads as a
+      // failure when it is actually the block working.
+      //
+      // Dismiss the sheet first, then replace what it was covering, so the dead
+      // screen doesn't stay behind to be reached with a back gesture.
+      if (!blocking) return router.back();
+      router.dismiss();
+      router.replace('/discover');
     });
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>

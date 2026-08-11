@@ -221,6 +221,17 @@ begin
        format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Unsafe or threatening',true)$q$, ivy, mo), mo,
        format($q$select 1 from public.rooms where id=%L$q$, re), false),
 
+      -- The profile goes with the rooms, because `profiles_select` only reaches
+      -- a stranger through `shares_room`, which walks `can_see_room`. This is
+      -- what makes reporting-and-blocking from someone's profile land on "No
+      -- room at that address" if the sheet goes `back` to it -- see the comment
+      -- in `screens/Report.tsx`.
+      ('a person you share a room with is readable', null, mo,
+       format($q$select 1 from public.profiles where id=%L$q$, ivy), true),
+      ('blocking hides that person''s profile too',
+       format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Unsafe or threatening',true)$q$, mo, ivy), mo,
+       format($q$select 1 from public.profiles where id=%L$q$, ivy), false),
+
       -- Unblocking. `reports` had SELECT and INSERT for its author and nothing
       -- else, so a block was permanent in both directions and neither person
       -- could undo it. The grant is by column: `blocked` is the reporter's,

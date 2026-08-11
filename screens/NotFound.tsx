@@ -17,8 +17,19 @@ export function NotFound() {
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
         The link may be old, or the host closed it.
       </Text>
+      {/*
+        `replace`, not a plain link. A bare `href` navigates, which leaves the
+        dead route on the stack — so "Back to Discover" got you to Discover and
+        the very next back gesture put you straight back on this screen, with
+        nothing behind it but the address that already didn't resolve.
+
+        Same trap `Create` documents: the screen you are leaving is spent, so it
+        has to be swapped rather than stacked on top of. `RoomCanceled` and
+        leaving a room both `router.replace('/discover')` for this reason.
+      */}
       <Link
         href="/discover"
+        replace
         accessibilityRole="link"
         style={{ fontFamily: font.medium, fontSize: 14, color: c.coral, marginTop: 4 }}>
         Back to Discover
