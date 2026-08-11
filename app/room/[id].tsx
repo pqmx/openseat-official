@@ -26,17 +26,21 @@ const views = {
  */
 export default function RoomRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { rooms, loading, error, reload } = useRooms();
+  const { rooms, settled, error, reload } = useRooms();
   const { me } = useSession();
 
   if (error) throw error;
-  if (loading || !me) return null;
+  if (!me) return null;
 
   const room = roomById(rooms, id);
   // A bad id is a dead link, not room one. Saying so beats rendering somebody
   // else's room as though it were the one you asked for — and it now also
   // covers a room the database declined to send you.
-  if (!room) return <NotFound />;
+  //
+  // But only once the server has answered. Create pushes here the moment the
+  // room exists, before any fetch has returned it, so an absent room is "not
+  // yet" until `settled` — otherwise opening a room flashes a dead link at you.
+  if (!room) return settled ? <NotFound /> : null;
   const Screen = views[viewOf(room, me)];
   return <Screen key={room.id} room={room} rooms={rooms} reload={reload} />;
 }

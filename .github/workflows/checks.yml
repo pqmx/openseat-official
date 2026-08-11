@@ -1,0 +1,75 @@
+# The two gates that can fail a build.
+#
+# `npm run check` is tsc plus the three pure checks. `policies.check.sql` is the
+# fourth and used to be unrunnable here: the rules it exercises are RLS, and
+# there was no way to get the schema into a database CI controls. There is now —
+# `supabase/migrations/` is the schema, and `supabase/ci/bootstrap.sql` is the
+# handful of things Supabase supplies that a stock Postgres doesn't.
+#
+# No Supabase CLI and no Docker-in-Docker: a `postgres` service container and
+# psql are enough, because the migrations are plain SQL.
+
+name: Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: tsc and pure checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # `.npmrc` sets legacy-peer-deps; without it SDK 57's own peer mismatch
+      # ERESOLVEs before anything gets installed.
+      - run: npm ci
+      - run: npm run check
+
+  policies:
+    name: RLS policies
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Match the project's major version — `config.toml` says 17.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the schema
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/ci/bootstrap.sql
+          for f in supabase/migrations/*.sql; do
+            echo "-- $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      # ON_ERROR_STOP is what makes a failed check a failed job: the last block
+      # of the file raises when any row came back ok = f.
+      - name: Run the policy checks
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f policies.check.sql

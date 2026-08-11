@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "openseat-scaffold",
-    "slug": "openseat-scaffold",
+    "name": "Openseat",
+    "slug": "openseat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,10 +9,13 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.openseat.app"
+      "bundleIdentifier": "com.pqmx.openseat",
+      "usesAppleSignIn": true,
+      "buildNumber": "1"
     },
     "android": {
-      "package": "com.openseat.app",
+      "package": "com.pqmx.openseat",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,16 +24,21 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
       "expo-font",
       "expo-router",
+      "expo-apple-authentication",
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.294827572423-vi9l41sj4t7lr5mljqgb3du41u92h50v"
+          "iosUrlScheme": "com.googleusercontent.apps.294827572423-02lp0nn1alibhg0jeb8h9u2ifsarbvc9"
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "openseat",
+          "project": "openseat"
         }
       ]
     ],

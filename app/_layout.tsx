@@ -4,13 +4,37 @@ import {
   DMSans_700Bold,
   useFonts,
 } from '@expo-google-fonts/dm-sans';
+import * as Sentry from '@sentry/react-native';
 import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, Text, View, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SessionProvider } from '../session';
 import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../theme';
+
+/**
+ * Crash reporting, and nothing else — no tracing, no session replay, no
+ * performance sampling. A route that throws is the one thing nobody can tell us
+ * about: `app/` throws on load failure by design, and in a shipped build that
+ * screen is the last anyone sees of the problem.
+ *
+ * Silent without `EXPO_PUBLIC_SENTRY_DSN`, so development reports nothing and a
+ * checkout without the key still runs. `sendDefaultPii` stays off: the whole
+ * point of this backend is that a UCLA email never leaves the row it's in.
+ */
+const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (dsn) {
+  Sentry.init({
+    dsn,
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    // The DSN is inlined into the bundle like every EXPO_PUBLIC_ value, which is
+    // what a DSN is for — it accepts events and reads nothing back.
+    enabled: !__DEV__,
+  });
+}
 
 /**
  * Expo Router renders this for any route that throws. Same tokens as the rest
@@ -18,6 +42,11 @@ import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../t
  */
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   const c = light;
+  // Keyed on the error itself: `retry` re-renders this with the same object if
+  // the route throws again, and reporting per render would send a crash loop.
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
   return (
     <View
       style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center', padding: 22, gap: 14 }}>
@@ -40,7 +69,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [loaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_700Bold });
   // The design has a light and a dark set; the OS setting picks between them.
   const scheme: Scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
@@ -54,17 +83,25 @@ export default function RootLayout() {
     // its own on Android. Expo Router only supplies one inside its JS stack,
     // and this app is on the native one.
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeContext.Provider value={value}>
-        {/* Identity is ambient, like the theme — every screen reads it. */}
-        <SessionProvider>
-          <Stack
-            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
-            {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
-            <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
-          </Stack>
-        </SessionProvider>
-        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      </ThemeContext.Provider>
+      {/* StatusStrip reads the real inset from this — a Dynamic Island isn't
+          the same height on every phone, so a fixed guess under-covers some. */}
+      <SafeAreaProvider>
+        <ThemeContext.Provider value={value}>
+          {/* Identity is ambient, like the theme — every screen reads it. */}
+          <SessionProvider>
+            <Stack
+              screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
+              {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
+              <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
+            </Stack>
+          </SessionProvider>
+          <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+        </ThemeContext.Provider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
+
+// Catches what the router's ErrorBoundary can't: a throw above it, and the
+// native crashes no JS handler ever sees.
+export default Sentry.wrap(RootLayout);

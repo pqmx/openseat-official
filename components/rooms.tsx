@@ -84,7 +84,7 @@ export const RoomCard = ({ room, now }: { room: Room; now: Date }) => {
       </Text>
       {/* The avatar row below already carries the head count. */}
       <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 5 }}>
-        {room.place} · {room.walkMinutes} min · {hostOf(room).name}
+        {room.place} · {hostOf(room).name}
       </Text>
       <View
         style={{

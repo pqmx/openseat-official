@@ -33,7 +33,6 @@ export type Update = {
   text: string;
   at: Date;
   by: Person;
-  seenBy: number;
 };
 
 export type Access = 'open' | 'approve';
@@ -43,8 +42,6 @@ export type Room = {
   title: string;
   /** "Lot D rooftop, level 5" — shown once you're in. */
   place: string;
-  street: string;
-  walkMinutes: number;
   /**
    * Roughly where, rounded to 3dp (~110m). Everyone who can see the room gets
    * these, and the map draws its 150m circle from them — coarser than the
@@ -74,7 +71,6 @@ export type Room = {
   /** Waiting on the host, for `access: 'approve'` rooms. */
   requests: Person[];
   updates: Update[];
-  blurb?: string;
 };
 
 /** Undefined when there's no such room, so callers have to say what that looks like. */
@@ -115,17 +111,56 @@ export const hasAsked = (room: Room, person: Person) =>
 export const showsExactPin = (room: Room): room is Room & { lat: number; lng: number } =>
   room.lat !== undefined && room.lng !== undefined;
 
-/** What the feed's search field and filter panel narrow by. */
-export type Query = { text?: string; maxWalk?: number; openOnly?: boolean };
+/** Which maps app a handoff link is addressed to. */
+export type MapsApp = 'apple' | 'google';
 
-/** Free text hits the three things a room is findable by; the rest are limits. */
+/**
+ * The stored preference, or `undefined` for "never answered".
+ *
+ * Those are different states and the difference is the whole feature: if a
+ * missing value read as `'google'`, the chooser could never appear, because
+ * nobody would ever be unset. Anything unrecognised — a value written by a
+ * later build, a corrupt read — is treated as unset too, so the app asks again
+ * rather than handing `mapsUrl` an app that doesn't exist.
+ *
+ * Here rather than in `prefs.ts` for the usual reason: `data.ts` is pure, so
+ * `data.check.ts` can run this, and AsyncStorage can't be run under node.
+ */
+export const asMapsApp = (v: string | null | undefined): MapsApp | undefined =>
+  v === 'apple' || v === 'google' ? v : undefined;
+
+/**
+ * A link that drops a pin on the room in a real maps app.
+ *
+ * Coordinates, never an address a geocoder has to guess a rooftop level from.
+ * `showsExactPin` decides which pair is ours to send, so a non-member hands off
+ * the 3dp approximation and never the door — the same rule the map draws its
+ * circle by.
+ *
+ * Both are `https` universal links rather than the `maps://` and
+ * `comgooglemaps://` schemes. A scheme has to be declared in
+ * `LSApplicationQueriesSchemes` before iOS will even admit it exists, which
+ * means an `app.json` edit and a native rebuild; the https forms open the same
+ * apps when installed and fall back to the website when not.
+ */
+export const mapsUrl = (room: Room, app: MapsApp) => {
+  const { lat, lng } = showsExactPin(room)
+    ? { lat: room.lat, lng: room.lng }
+    : { lat: room.approxLat, lng: room.approxLng };
+  return app === 'apple'
+    ? `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(room.place)}`
+    : `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+};
+
+/**
+ * What the feed's filter panel narrows by. An object rather than a bare boolean
+ * so a second filter doesn't have to change `matchesQuery` and `narrowed` to
+ * add itself back.
+ */
+export type Query = { openOnly?: boolean };
+
+/** A limit, so a room passes by default and this can only reject. */
 export const matchesQuery = (room: Room, q: Query) => {
-  const text = q.text?.trim().toLowerCase();
-  if (text) {
-    const haystack = `${room.title} ${room.place} ${room.street}`.toLowerCase();
-    if (!haystack.includes(text)) return false;
-  }
-  if (q.maxWalk !== undefined && room.walkMinutes > q.maxWalk) return false;
   if (q.openOnly && seatsLeft(room) === 0) return false;
   return true;
 };
@@ -140,11 +175,13 @@ export const statusOf = (room: Room, now: Date): Status =>
       ? { label: `LIVE · ${elapsed(room.startsAt, now)}`, tone: 'live' }
       : { label: when(room.startsAt, now), tone: 'soon' };
 
-/** "Lot D rooftop · 4 min · 14 here" — one rule for every feed row. */
+/**
+ * "Lot D rooftop · 14 here" — one rule for every feed row. No distance: nothing
+ * measures one, and that would mean asking for location.
+ */
 export const metaOf = (room: Room, now: Date) =>
   [
     room.place,
-    `${room.walkMinutes} min`,
     isLive(room, now)
       ? `${room.attendees.length} here`
       : `${room.attendees.length} of ${room.capacity} seats`,
@@ -175,6 +212,67 @@ export const viewOf = (room: Room, me: Person): RoomView => {
  */
 export const classYears = ["'27", "'28", "'29", 'Grad'];
 
+/**
+ * The tags a profile can carry — and the only ones it can. The picker offers
+ * these and has no free-text path, which is the point: a tag you type is a tag
+ * nothing else can ever match on, and free text on a profile other students
+ * read is a moderation surface with nothing behind it.
+ *
+ * Postgres caps the count and the size (`profiles_interests_sane`) but not the
+ * vocabulary — a CHECK can't hold the subquery that would take. So this list is
+ * the vocabulary, the same way `classYears` is.
+ */
+export const interestTags = [
+  'Late-night food',
+  'Study rooms',
+  'Basketball',
+  'Live music',
+  'Film',
+  'Climbing',
+  'Board games',
+  'Beach runs',
+  'Coffee',
+  'Art',
+  'Pickup soccer',
+  'Photography',
+];
+
+/** As many tags as `profiles_interests_sane` will take. */
+export const maxInterests = 6;
+
+/** As long an answer as one prompt gets. */
+export const maxAnswer = 140;
+
+/**
+ * The two questions every profile is asked, with the copy shown until they're
+ * answered. The labels are the design's; they used to be typed into
+ * `ProfileEmpty` as decoration, which is why nothing could fill them in.
+ */
+export const promptQuestions = [
+  { q: 'MY IDEAL FRIDAY IS', placeholder: 'Ten words is plenty. Say the real one.' },
+  { q: 'TAKE ME TO A ROOM ABOUT', placeholder: "Anything, as long as it's not another club fair." },
+];
+
+const rank = (q: string) => {
+  const i = promptQuestions.findIndex((p) => p.q === q);
+  // A question this build doesn't ask — an older one, a later one — sorts last
+  // rather than vanishing. Dropping it would delete an answer on save.
+  return i < 0 ? promptQuestions.length : i;
+};
+
+/**
+ * One answer set, replaced or removed, in the order the questions are asked.
+ *
+ * Sorted rather than appended because the stored order *is* the order everyone
+ * else reads: `Profile` maps `person.prompts` straight out. Append, and editing
+ * your first answer quietly moves it below your second on their screen.
+ */
+export const withAnswer = (prompts: Person['prompts'], q: string, a: string) => {
+  const text = a.trim();
+  const rest = (prompts ?? []).filter((p) => p.q !== q);
+  return (text ? [...rest, { q, a: text }] : rest).sort((x, y) => rank(x.q) - rank(y.q));
+};
+
 /** What Create knows by the time you press "Open the room". */
 export type Draft = {
   title: string;
@@ -195,13 +293,14 @@ export const myRooms = (rooms: Room[], me: Person, now: Date) =>
     });
 
 /**
- * Rooms this viewer can see: live ones first and nearest first inside that —
- * "live nearby" is a walking decision — then upcoming by soonest.
+ * Rooms this viewer can see: live ones first, then upcoming by soonest, and
+ * inside each group the one that started or starts nearest to now.
  *
- * The `years` filter is now belt-and-braces: `rooms_select` in the database
- * already refuses to return a room your year can't see, so a restricted room is
- * absent rather than filtered. Keeping it here costs nothing and means the sort
- * still behaves if this ever runs against unfiltered rows.
+ * The `years` filter is belt-and-braces: `rooms_select` in the database already
+ * refuses to return a room your year can't see, so a restricted room is absent
+ * rather than filtered. One exception it does *not* mirror — the server always
+ * hands a host their own room back — which is why a host who restricts a room
+ * away from their own year won't see it here. The Rooms tab is that view.
  */
 export const feedFor = (rooms: Room[], year: string, now: Date) =>
   rooms
@@ -209,6 +308,8 @@ export const feedFor = (rooms: Room[], year: string, now: Date) =>
     .sort((a, b) => {
       const live = Number(isLive(b, now)) - Number(isLive(a, now));
       if (live !== 0) return live;
-      if (isLive(a, now)) return a.walkMinutes - b.walkMinutes;
-      return a.startsAt.getTime() - b.startsAt.getTime();
+      // Live: most recently started first. Upcoming: soonest first.
+      return isLive(a, now)
+        ? b.startsAt.getTime() - a.startsAt.getTime()
+        : a.startsAt.getTime() - b.startsAt.getTime();
     });

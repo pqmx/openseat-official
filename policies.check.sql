@@ -4,9 +4,12 @@
 -- pure. These rules are not in the app at all -- they are in Postgres -- so the
 -- only honest test runs there:
 --
---   psql "$DATABASE_URL" -f policies.check.sql
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f policies.check.sql
 --
--- Every row of the output must read ok = t.
+-- Every row of the output must read ok = t, and the last block turns that into
+-- an exit code so CI can gate on it. `.github/workflows/checks.yml` runs it
+-- against a stock Postgres seeded from `supabase/ci/bootstrap.sql` and
+-- `supabase/migrations/` -- which is the other reason those migrations exist.
 --
 -- It builds its own world -- four students and six rooms, inserted into
 -- `auth.users` so the signup trigger seeds their profiles -- and the whole
@@ -36,33 +39,33 @@ update public.profiles set year = '''27' where id in (
 update public.profiles set year = '''29' where id = '11111111-1111-4111-8111-000000000003';
 
 insert into public.rooms
-  (id, title, place, street, walk_minutes, host_id, starts_at, capacity, access, years,
+  (id, title, place, host_id, starts_at, capacity, access, years,
    canceled_at, approx_lat, approx_lng)
 values
   -- Hana hosts, Mo is in: leaving, posting, ending.
-  ('22222222-2222-4222-8222-00000000000a', 'Open room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000a', 'Open room', 'A place',
    '11111111-1111-4111-8111-000000000001', now() + interval '1 hour', 4, 'open', null,
    null, 34.07, -118.44),
   -- Hana hosts, nobody else in: joining.
-  ('22222222-2222-4222-8222-00000000000b', 'Joinable room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000b', 'Joinable room', 'A place',
    '11111111-1111-4111-8111-000000000001', now() + interval '1 hour', 4, 'open', null,
    null, 34.07, -118.44),
   -- Hana hosts, Ash is waiting: approving and declining.
-  ('22222222-2222-4222-8222-00000000000c', 'Approve room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000c', 'Approve room', 'A place',
    '11111111-1111-4111-8111-000000000001', now() + interval '1 hour', 3, 'approve', null,
    null, 34.07, -118.44),
   -- Same, but every seat is taken: approving must still refuse.
-  ('22222222-2222-4222-8222-00000000000d', 'Approve room, full', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000d', 'Approve room, full', 'A place',
    '11111111-1111-4111-8111-000000000001', now() + interval '1 hour', 1, 'approve', null,
    null, 34.07, -118.44),
   -- Ivy hosts these three: full, year-gated, and called off.
-  ('22222222-2222-4222-8222-00000000000e', 'Full room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000e', 'Full room', 'A place',
    '11111111-1111-4111-8111-000000000004', now() + interval '1 hour', 1, 'open', null,
    null, 34.07, -118.44),
-  ('22222222-2222-4222-8222-00000000000f', 'Gated room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-00000000000f', 'Gated room', 'A place',
    '11111111-1111-4111-8111-000000000004', now() + interval '1 hour', 8, 'open', array['''29'],
    null, 34.07, -118.44),
-  ('22222222-2222-4222-8222-000000000010', 'Canceled room', 'A place', 'A street', 5,
+  ('22222222-2222-4222-8222-000000000010', 'Canceled room', 'A place',
    '11111111-1111-4111-8111-000000000004', now() + interval '1 hour', 8, 'open', null,
    now(), 34.07, -118.44);
 
@@ -132,6 +135,25 @@ begin
        format($q$update public.room_members set state='member' where room_id=%L and profile_id=%L$q$, rc, ash), false),
       ('host cannot approve past capacity', null, hana,
        format($q$update public.room_members set state='member' where room_id=%L and profile_id=%L$q$, rd, ash), false),
+
+      -- One statement, every requester at once. `seats_left()` runs inside a
+      -- `with check`, and a `with check` cannot count the rows its own statement
+      -- is writing -- so each of these rows saw the same two free seats and all
+      -- three passed, seating four people in a room that holds three. api.ts
+      -- approves one profile_id at a time, but the policy is what decides, and
+      -- anyone can send this with their own token. `private.enforce_capacity()`
+      -- is an after-row trigger for exactly this: it counts once the rows exist.
+      -- The same blind spot is what let two joins race for one last seat; the
+      -- `for update` in the trigger is the half that closes that.
+      ('host cannot approve a roomful in one statement',
+       format($q$insert into public.room_members(room_id,profile_id,state) values (%L,%L,'requested'),(%L,%L,'requested')$q$, rc, mo, rc, ivy), hana,
+       format($q$update public.room_members set state='member' where room_id=%L$q$, rc), false),
+      -- And the same statement inside capacity still goes through, or the
+      -- trigger would just be a way to make approving fail.
+      ('host approves two at once when both fit',
+       format($q$insert into public.room_members(room_id,profile_id,state) values (%L,%L,'requested')$q$, rc, mo), hana,
+       format($q$update public.room_members set state='member' where room_id=%L$q$, rc), true),
+
       ('host declines a request', null, hana,
        format($q$delete from public.room_members where room_id=%L and profile_id=%L$q$, rc, ash), true),
 
@@ -164,6 +186,19 @@ begin
        format($q$update public.profiles set name='Hana O' where id=%L$q$, mo), false),
       ('onboarding may still set year', null, mo,
        format($q$update public.profiles set year='''28' where id=%L$q$, mo), true),
+      ('fill in your own tags and prompts', null, mo,
+       format($q$update public.profiles set interests=array['Coffee','Film'],
+               prompts='[{"q":"MY IDEAL FRIDAY IS","a":"the roof"}]'::jsonb where id=%L$q$, mo), true),
+      -- RLS scopes this to your own row; the grant is what stops the columns
+      -- Google owns. Both are load-bearing, so both get a case.
+      ('cannot fill in somebody else''s profile', null, mo,
+       format($q$update public.profiles set interests=array['Coffee'] where id=%L$q$, hana), false),
+      -- The caps are the only thing standing between a profile everyone you
+      -- share a room with can read and an unbounded blob in it.
+      ('cannot store more tags than the cap', null, mo,
+       format($q$update public.profiles set interests=array['a','b','c','d','e','f','g'] where id=%L$q$, mo), false),
+      ('cannot store an oversized prompt blob', null, mo,
+       format($q$update public.profiles set prompts=jsonb_build_array(jsonb_build_object('q','MY IDEAL FRIDAY IS','a',repeat('x',900))) where id=%L$q$, mo), false),
 
       -- Reports, and the blocking they can carry. These two read a row rather
       -- than write one: "allowed" means the room came back.
@@ -171,6 +206,12 @@ begin
        format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Spam or scam',true)$q$, mo, ivy), true),
       ('cannot file a report as somebody else', null, mo,
        format($q$insert into public.reports(reporter_id,profile_id,reason) values (%L,%L,'Spam or scam')$q$, ash, ivy), false),
+      -- `reviewed_at` is triage's column, and `private.report_queue` is the
+      -- `reviewed_at is null` rows. INSERT was granted table-wide, so filing a
+      -- report already stamped reviewed was how you filed one nobody would read.
+      -- The revoke, not a policy, is what refuses this.
+      ('cannot file a report already marked reviewed', null, mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason,reviewed_at) values (%L,%L,'Spam or scam',now())$q$, mo, ivy), false),
       ('a host''s room is visible before any block', null, mo,
        format($q$select 1 from public.rooms where id=%L$q$, re), true),
       ('blocking hides that host''s rooms',
@@ -178,7 +219,46 @@ begin
        format($q$select 1 from public.rooms where id=%L$q$, re), false),
       ('blocking is symmetric',
        format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Unsafe or threatening',true)$q$, ivy, mo), mo,
-       format($q$select 1 from public.rooms where id=%L$q$, re), false)
+       format($q$select 1 from public.rooms where id=%L$q$, re), false),
+
+      -- Unblocking. `reports` had SELECT and INSERT for its author and nothing
+      -- else, so a block was permanent in both directions and neither person
+      -- could undo it. The grant is by column: `blocked` is the reporter's,
+      -- `reviewed_at` stays triage's.
+      ('a block can be lifted',
+       format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Unsafe or threatening',true)$q$, mo, ivy), mo,
+       format($q$update public.reports set blocked=false where reporter_id=%L$q$, mo), true),
+      ('cannot lift somebody else''s block',
+       format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Unsafe or threatening',true)$q$, ivy, mo), mo,
+       format($q$update public.reports set blocked=false where reporter_id=%L$q$, ivy), false),
+      ('cannot mark your own report reviewed',
+       format($q$insert into public.reports(reporter_id,profile_id,reason) values (%L,%L,'Spam or scam')$q$, mo, ivy), mo,
+       format($q$update public.reports set reviewed_at=now() where reporter_id=%L$q$, mo), false),
+
+      -- TRUNCATE answers to no policy, so the only thing that can refuse it is
+      -- the absence of the grant. It was granted to `authenticated` on all six
+      -- tables; PostgREST not being able to spell it was the whole defence.
+      ('truncate is refused', null, mo, 'truncate public.rooms', false),
+      -- INSERT on `rooms` was table-wide, which made `id` and `created_at`
+      -- writable by anyone. Column grants are what refuse this.
+      ('cannot choose a room''s own id', null, mo,
+       format($q$insert into public.rooms(id,title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
+               values (gen_random_uuid(),'Study','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44)$q$, mo), false),
+
+      -- The `create_room` cap. `setup` seeds rooms as the script's own role so
+      -- the counter is already primed when the student calls the function.
+      ('opening a room is allowed under the cap',
+       format($q$insert into public.rooms(title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
+               select 'Seeded','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44 from generate_series(1,4)$q$, mo), mo,
+       $q$select public.create_room('Study','Powell',now()+interval '1 hour',4,'open',null,34.07,-118.44)$q$, true),
+      ('cannot open a sixth room in an hour',
+       format($q$insert into public.rooms(title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
+               select 'Seeded','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44 from generate_series(1,5)$q$, mo), mo,
+       $q$select public.create_room('Study','Powell',now()+interval '1 hour',4,'open',null,34.07,-118.44)$q$, false)
+
+      -- There were six cases here for `private.can_see_topic`, the `using`
+      -- clause of the realtime topic policy. Realtime is out of the MVP and
+      -- the function is dropped, so they went with it.
 
     ) as v(name, setup, uid, sql, expect)
   loop
@@ -207,6 +287,193 @@ begin
   end loop;
 end $$;
 
+-- ------------------------------------------------- the signup trigger --
+
+-- Not policies. `handle_new_user()` is a trigger on `auth.users`, and both
+-- halves of it are load-bearing now that the gate is Google and Apple: the
+-- domain check is the only thing keeping non-UCLA accounts out, and the
+-- backfill is the only reason an Apple account isn't named after its email.
+--
+-- These run as the script's own role rather than as a student, because writing
+-- `auth.users` is GoTrue's job and never the client's.
+
+do $$
+declare
+  apple constant uuid := '11111111-1111-4111-8111-000000000005';
+  got   text;
+begin
+  -- Apple's identity token carries no name at all, so the row lands on the
+  -- email's local part.
+  insert into auth.users (id, email, raw_user_meta_data)
+  values (apple, 'mjimenez@g.ucla.edu', '{}'::jsonb);
+  select name into got from public.profiles where id = apple;
+  insert into check_result values (
+    'a signup with no name falls back to the email', got = 'mjimenez', got, 'mjimenez', null);
+
+  -- The first authorisation's name, handed over afterwards by `updateUser`.
+  update auth.users set raw_user_meta_data = '{"full_name":"Maya Jimenez"}'::jsonb
+   where id = apple;
+  select name || ' / ' || short || ' / ' || initials into got
+    from public.profiles where id = apple;
+  insert into check_result values (
+    'apple hands its name over on the next update',
+    got = 'Maya J / Maya / MJ', got, 'Maya J / Maya / MJ', null);
+
+  -- And never again. A name a roster has already shown is not the client's to
+  -- edit, which is the whole reason the upsert carries a `where`.
+  update auth.users set raw_user_meta_data = '{"full_name":"Hana Okafor"}'::jsonb
+   where id = apple;
+  select name into got from public.profiles where id = apple;
+  insert into check_result values (
+    'a settled name cannot be rewritten later', got = 'Maya J', got, 'Maya J', null);
+end $$;
+
+do $$
+declare
+  t       record;
+  refused boolean;
+  err     text;
+begin
+  for t in
+    select * from (values
+      ('a non-UCLA address is refused at signup', 'maya@gmail.com'),
+      -- Hide My Email is the likely Apple refusal, not the odd one: the relay
+      -- address is what the app warns about before it ever sends the token.
+      ('apple''s Hide My Email relay is refused too', 'x9k2h@privaterelay.appleid.com'),
+      ('a lookalike domain is refused', 'maya@ucla.edu.example.com')
+    ) as v(name, email)
+  loop
+    begin
+      insert into auth.users (id, email) values (gen_random_uuid(), t.email);
+      refused := false;
+      err := 'signup succeeded';
+      raise exception 'OPENSEAT_DONE';
+    exception when others then
+      if sqlerrm <> 'OPENSEAT_DONE' then refused := true; err := null; end if;
+    end;
+    insert into check_result values (
+      t.name, refused, case when refused then 'refused' else 'allowed' end, 'refused', err);
+  end loop;
+end $$;
+
+-- --------------------------------------------------- deleting an account --
+
+-- `public.delete_me()` is the one write in the app that a policy cannot express,
+-- because it ends with a row in `auth.users` and no student may touch that table.
+-- It is `security definer`, so what guards it is the code, and the code is only
+-- as good as these assertions.
+--
+-- The shape being defended: a profile outlives its login. `rooms.host_id ->
+-- profiles -> auth.users` used to cascade the whole way, so deleting an account
+-- deleted the rooms other people had joined and every report the account had
+-- filed -- which unblocked, symmetrically and silently, whoever it had blocked.
+
+do $$
+declare
+  gone constant uuid := '11111111-1111-4111-8111-000000000006';
+  stay constant uuid := '11111111-1111-4111-8111-000000000007';
+  mine constant uuid := '22222222-2222-4222-8222-000000000011';  -- gone hosts
+  theirs constant uuid := '22222222-2222-4222-8222-000000000012'; -- stay hosts
+  orig text := session_user;
+  got  text;
+  n    bigint;
+begin
+  insert into auth.users (id, email, raw_user_meta_data) values
+    (gone, 'gone@ucla.edu', '{"full_name":"Gone Student"}'),
+    (stay, 'stay@ucla.edu', '{"full_name":"Stay Student"}');
+
+  insert into public.rooms
+    (id, title, place, host_id, starts_at, capacity, access, approx_lat, approx_lng)
+  values
+    (mine,   'Their room', 'Powell', gone, now() + interval '1 hour', 4, 'open', 34.07, -118.44),
+    (theirs, 'Other room', 'Powell', stay, now() + interval '1 hour', 4, 'open', 34.07, -118.44);
+
+  insert into public.room_members (room_id, profile_id, state) values
+    (mine, gone, 'member'), (mine, stay, 'member'),
+    (theirs, stay, 'member'), (theirs, gone, 'member');
+
+  -- The block that must survive the account that filed it. It names Ivy, not
+  -- Stay, and that is the point: a block outliving its author keeps working, so
+  -- pointing it at the guest below would correctly hide the room from them and
+  -- the next two cases would be measuring the block instead of the tombstone.
+  insert into public.reports (reporter_id, profile_id, reason, blocked)
+  values (gone, '11111111-1111-4111-8111-000000000004', 'Unsafe or threatening', true);
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', gone)::text, true);
+  perform public.delete_me();
+  perform set_config('role', orig, true);
+
+  select count(*) into n from auth.users where id = gone;
+  insert into check_result values (
+    'deleting an account removes the login', n = 0, n::text, '0', null);
+
+  select count(*) into n from public.rooms where id = mine and canceled_at is not null;
+  insert into check_result values (
+    'a room outlives its host and reads as called off', n = 1, n::text, '1', null);
+
+  select name || ' / ' || coalesce(year, 'null') into got
+    from public.profiles where id = gone;
+  insert into check_result values (
+    'the profile is scrubbed to a tombstone', got = 'Former student / null',
+    got, 'Former student / null', null);
+
+  -- Off other people's rosters, but still on the room it hosts -- that membership
+  -- is what `private.shares_room` walks to make the tombstone selectable at all.
+  select count(*) into n from public.room_members where profile_id = gone and room_id = theirs;
+  insert into check_result values (
+    'a deleted account leaves rooms it only joined', n = 0, n::text, '0', null);
+  select count(*) into n from public.room_members where profile_id = gone and room_id = mine;
+  insert into check_result values (
+    'a deleted account stays on the room it hosts', n = 1, n::text, '1', null);
+
+  select count(*) into n from public.reports where reporter_id = gone and blocked;
+  insert into check_result values (
+    'a block outlives the account that filed it', n = 1, n::text, '1', null);
+
+  -- Still enforced, not merely still stored. This is the case that fails if the
+  -- reports rows ever go back to cascading away with the account.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '11111111-1111-4111-8111-000000000004')::text, true);
+  select count(*) into n from public.rooms where id = mine;
+  perform set_config('role', orig, true);
+  insert into check_result values (
+    'a block filed by a deleted account still bites', n = 0, n::text, '0', null);
+
+  -- The half that actually breaks the app if it regresses: `api.ts` embeds the
+  -- host on every room, and a room it can see whose host it cannot read is a
+  -- null `host` and a crash in `toRoom`.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', stay)::text, true);
+  select count(*) into n from public.rooms where id = mine;
+  perform set_config('role', orig, true);
+  insert into check_result values (
+    'the canceled room is still visible to who joined it', n = 1, n::text, '1', null);
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', stay)::text, true);
+  select count(*) into n from public.profiles where id = gone;
+  perform set_config('role', orig, true);
+  insert into check_result values (
+    'the tombstone is still readable, so the room can render', n = 1, n::text, '1', null);
+end $$;
+
 select test, ok, got, expected, detail from check_result order by ok, test;
+
+-- The table above is for reading; this is for exit codes. Run under
+-- `psql -v ON_ERROR_STOP=1` and a failure leaves psql non-zero, which is what
+-- lets CI gate on this file instead of somebody eyeballing the `ok` column.
+-- Raising aborts the transaction, which is the rollback this was going to do.
+do $$
+declare
+  bad int;
+  all_of int;
+begin
+  select count(*) filter (where not ok), count(*) into bad, all_of from check_result;
+  if bad > 0 then
+    raise exception '% of % policy checks failed', bad, all_of;
+  end if;
+end $$;
 
 rollback;

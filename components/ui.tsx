@@ -10,9 +10,7 @@ import Animated, {
 import {
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   View,
   type StyleProp,
   type TextStyle,
@@ -20,11 +18,18 @@ import {
 } from 'react-native';
 import type { Tone } from '../data';
 import { router, usePathname } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { font, radius, type, useTheme, type Colors } from '../theme';
-import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon, SearchIcon } from './icons';
+import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon } from './icons';
 
-/** The design's 50px status-bar strip; the real OS bar draws into it. */
-export const StatusStrip = () => <View style={{ height: 50 }} />;
+/** Reserves the real status bar / Dynamic Island. A fixed guess (the design's
+ *  50px) undershoots on phones with a taller inset than whatever it was drawn
+ *  against, which crowds the header — and on Create, crowds the back button
+ *  into the island's dead zone, so it stops being tappable. */
+export const StatusStrip = () => {
+  const { top } = useSafeAreaInsets();
+  return <View style={{ height: top }} />;
+};
 
 export const Eyebrow = ({ children }: { children: React.ReactNode }) => {
   const { c } = useTheme();
@@ -459,158 +464,50 @@ export const Field = ({
   );
 };
 
-/**
- * Map plate. CSS draws the grid with repeating-linear-gradient; RN has no
- * equivalent, so the bands are Views. Counts are fixed and clipped by
- * `overflow: hidden` — the plate is decorative, not a real map.
- * ponytail: swap the whole plate for react-native-maps when pins go live.
- */
-export const MapPlate = ({
-  cellW,
-  cellH,
-  blur,
-  style,
-  children,
-}: {
-  cellW: number;
-  cellH: number;
-  /** Casual pre-join blurs the plate; RN can't blur, so it fades instead. */
-  blur?: boolean;
-  style?: StyleProp<ViewStyle>;
-  children?: React.ReactNode;
-}) => {
-  const { c } = useTheme();
-  const band = 8;
-  return (
-    <View style={[{ overflow: 'hidden', backgroundColor: c.hairFaint }, style]}>
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: c.map },
-          blur ? { opacity: 0.55 } : null,
-        ]}>
-        {Array.from({ length: 8 }, (_, i) => (
-          <View
-            key={`v${i}`}
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              left: i * cellW + (cellW - band),
-              width: band,
-              backgroundColor: c.mapGrid,
-            }}
-          />
-        ))}
-        {Array.from({ length: 8 }, (_, i) => (
-          <View
-            key={`h${i}`}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: i * cellH + (cellH - band),
-              height: band,
-              backgroundColor: c.mapGrid,
-            }}
-          />
-        ))}
-      </View>
-      {children}
-    </View>
-  );
-};
-
-/**
- * Floating search + filter row over the map. Both halves used to be plain
- * Views that looked tappable and weren't; the placeholder still reads "Near
- * campus" because that's the scope, but nothing here implies GPS — the app
- * never asks for location.
- */
-export const MapSearchBar = ({
-  text,
-  onText,
+/** Floating filter button over the map. */
+export const MapFilterButton = ({
   filtersOn,
   onFilters,
 }: {
-  text: string;
-  onText: (t: string) => void;
-  /** Dot on the filter button when the feed is narrowed. */
+  /** Dot on the button when the feed is narrowed. */
   filtersOn?: boolean;
   onFilters: () => void;
 }) => {
   const { c } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Filters"
+      accessibilityState={{ expanded: !!filtersOn }}
+      onPress={onFilters}
       style={{
         position: 'absolute',
         top: 60,
-        left: 20,
         right: 20,
-        flexDirection: 'row',
+        width: 42,
+        height: 42,
+        borderRadius: radius.md,
+        backgroundColor: c.surface94,
+        borderWidth: 1,
+        borderColor: filtersOn ? c.ink : c.frame,
         alignItems: 'center',
-        gap: 8,
+        justifyContent: 'center',
       }}>
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 9,
-          height: 42,
-          paddingHorizontal: 14,
-          borderRadius: radius.md,
-          backgroundColor: c.surface94,
-          borderWidth: 1,
-          borderColor: c.frame,
-        }}>
-        <SearchIcon color={c.mute2} />
-        <TextInput
-          value={text}
-          onChangeText={onText}
-          placeholder="Near campus"
-          placeholderTextColor={c.mute}
-          accessibilityLabel="Search rooms"
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          autoCorrect={false}
-          // Place names aren't sentences; the match is case-insensitive either
-          // way, but the field shouldn't shout back at you.
-          autoCapitalize="none"
-          style={{ flex: 1, fontFamily: font.regular, fontSize: 13.5, color: c.ink }}
+      <FilterIcon color={c.ink2} />
+      {filtersOn ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            width: 6,
+            height: 6,
+            borderRadius: radius.round,
+            backgroundColor: c.coral,
+          }}
         />
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Filters"
-        accessibilityState={{ expanded: !!filtersOn }}
-        onPress={onFilters}
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: radius.md,
-          backgroundColor: c.surface94,
-          borderWidth: 1,
-          borderColor: filtersOn ? c.ink : c.frame,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        <FilterIcon color={c.ink2} />
-        {filtersOn ? (
-          <View
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 6,
-              width: 6,
-              height: 6,
-              borderRadius: radius.round,
-              backgroundColor: c.coral,
-            }}
-          />
-        ) : null}
-      </Pressable>
-    </View>
+      ) : null}
+    </Pressable>
   );
 };
 
@@ -765,14 +662,34 @@ export const Body = ({
   children,
   style,
   contentStyle,
+  keyboardAware,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * For a screen whose content is *chosen* while the keyboard is up — Create's
+   * place list is the only one. Without it the suggestions render behind the
+   * keyboard, and the first tap on a visible one is swallowed dismissing the
+   * keyboard instead of reaching the row. Together those read as "results only
+   * appear when you press Return".
+   *
+   * Opt-in rather than the default on purpose: `'handled'` lets a tap land on
+   * another control *without* blurring the field first, and `/you` saves a
+   * prompt on blur.
+   */
+  keyboardAware?: boolean;
 }) => (
   <ScrollView
     style={[{ flex: 1 }, style]}
     contentContainerStyle={contentStyle}
+    // Scrolling away from a field closes the keyboard, which blurs it. That is
+    // load-bearing on `/you`: a prompt saves on blur, so without this you could
+    // type an answer, scroll, background the app and lose it.
+    keyboardDismissMode="on-drag"
+    keyboardShouldPersistTaps={keyboardAware ? 'handled' : undefined}
+    // iOS only. Android resizes already, from Expo's default layout mode.
+    automaticallyAdjustKeyboardInsets={keyboardAware}
     showsVerticalScrollIndicator={false}>
     {children}
   </ScrollView>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { LockIcon, PeelCorner, PinIcon } from '../components/icons';
 import {
@@ -15,20 +15,26 @@ import {
   YearChip,
 } from '../components/ui';
 import { router } from 'expo-router';
-import { createRoom } from '../api';
+import {
+  createRoom,
+  resolvePlace,
+  searchPlaces,
+  useNow,
+  type PlaceHit,
+  type PlaceSuggestion,
+} from '../api';
 import { classYears } from '../data';
+import { clock } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
-/** Cancel / STEP n / 2 / action — the bar on both create steps. */
+/** Cancel / Back, and the STEP n / 2 counter — the bar on both create steps. */
 const WizardBar = ({
   left,
   step,
-  right,
   onLeft,
 }: {
   left: string;
   step: string;
-  right: string;
   onLeft: () => void;
 }) => {
   const { c } = useTheme();
@@ -48,7 +54,6 @@ const WizardBar = ({
         style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}
       />
       <Eyebrow>{step}</Eyebrow>
-      <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.disabled }}>{right}</Text>
     </View>
   );
 };
@@ -57,14 +62,12 @@ const WizardBar = ({
 const PlaceRow = ({
   title,
   sub,
-  right,
   last,
   selected,
   onPress,
 }: {
   title: string;
   sub: string;
-  right?: string;
   last?: boolean;
   selected?: boolean;
   onPress?: () => void;
@@ -84,45 +87,104 @@ const PlaceRow = ({
         borderBottomWidth: last ? 0 : 1,
         borderBottomColor: c.hairFaint,
       }}>
-      <View>
+      <View style={{ flex: 1 }}>
         <Text style={{ fontFamily: font.medium, fontSize: 14, color: selected ? c.coral : c.ink }}>
           {title}
         </Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
           {sub}
         </Text>
       </View>
-      {right ? (
-        <Text style={{ fontFamily: font.regular, fontSize: 11, color: c.blue }}>{right}</Text>
-      ) : null}
     </Pressable>
   );
 };
 
+/**
+ * One typing session, in the shape Google groups requests by. Not a secret and
+ * not an id anything stores — it exists so a whole search bills as one lookup
+ * instead of one per keystroke, which is why it is made once per search rather
+ * than once per request. `Math.random` is fine for that; nothing here is
+ * guessing-resistant, and it saves a dependency the app doesn't otherwise have.
+ */
+const newSession = () =>
+  '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (ch) =>
+    (+ch ^ (Math.floor(Math.random() * 256) & (15 >> (+ch / 4)))).toString(16),
+  );
+
 /** Create, step 1 — what and where. */
-type Place = { title: string; sub: string; right?: string };
-
-const places: Place[] = [
-  { title: 'Lot D rooftop, level 5', sub: 'Charles E Young Dr · 4 min walk', right: '3 rooms here' },
-  { title: 'Lot D bike racks', sub: 'Charles E Young Dr' },
-];
-
-/** Always offered, however the search goes. */
-const customPin: Place = { title: 'Drop a custom pin', sub: 'Place it on the map yourself' };
-
 export function CreateStep1() {
   const { c } = useTheme();
-  const [title, setTitle] = useState('Sunset set on Lot D roof');
-  const [description, setDescription] = useState(
-    "Bringing the speaker + a blanket. Golden hour til it's dark, then we walk for pizza."
-  );
-  const [query, setQuery] = useState('lot d');
-  const [place, setPlace] = useState(places[0].title);
+  const [title, setTitle] = useState('');
+  const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<PlaceSuggestion[]>([]);
+  const [searchFailed, setSearchFailed] = useState<string>();
+  // The picked place is the whole hit, not its name: step 2 needs the
+  // coordinates, and a title alone is what used to put every room at the centre
+  // of campus.
+  const [place, setPlace] = useState<PlaceHit>();
+  // Which row is being turned into coordinates. A prediction has none, so the
+  // tap costs a round trip the old flow didn't have and has to say so.
+  const [picking, setPicking] = useState<string>();
+  // A ref, not state: nothing renders from it, and as state it would land in the
+  // effect's deps and fire a fresh search the moment a pick replaced the token.
+  const session = useRef(newSession());
+
+  // Suggestions as you type. Every one of these is free inside `session` — the
+  // one charge is the `resolvePlace` below — so the debounce is only here to
+  // stop a fast typist holding several requests open at once, and to abandon the
+  // answer to a query you're no longer typing. Otherwise a slow early response
+  // lands on top of a fast later one.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      setSearchFailed(undefined);
+      return;
+    }
+    const ctl = new AbortController();
+    const id = setTimeout(async () => {
+      try {
+        setHits(await searchPlaces(q, session.current, ctl.signal));
+        setSearchFailed(undefined);
+      } catch (e) {
+        if (ctl.signal.aborted) return;
+        setSearchFailed(e instanceof Error ? e.message : 'Place search failed.');
+      }
+    }, 150);
+    return () => {
+      clearTimeout(id);
+      ctl.abort();
+    };
+  }, [query]);
+
+  /**
+   * The end of the session, and the only billed call in it. A fresh token
+   * afterwards, because reusing one across searches is how Google decides you
+   * were never in a session at all and charges per request.
+   */
+  const pick = async (s: PlaceSuggestion) => {
+    setPicking(s.id);
+    try {
+      const { lat, lng } = await resolvePlace(s.id, session.current);
+      setPlace({ title: s.title, sub: s.sub, lat, lng });
+      setSearchFailed(undefined);
+      session.current = newSession();
+    } catch (e) {
+      setSearchFailed(e instanceof Error ? e.message : 'Could not pin that place.');
+    } finally {
+      setPicking(undefined);
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Cancel" step="STEP 1 / 2" right="Next" onLeft={() => router.back()} />
-      <Body contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 26 }}>
+      <WizardBar left="Cancel" step="STEP 1 / 2" onLeft={() => router.back()} />
+      {/* `keyboardAware` is what makes the suggestions usable: without it they
+          render behind the keyboard and the first tap on one is swallowed. */}
+      <Body keyboardAware contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 26 }}>
         <Text style={[type.display, { color: c.ink }]}>
           Open a seat.{'\n'}What's happening?
         </Text>
@@ -143,24 +205,6 @@ export function CreateStep1() {
           </Text>
         </View>
 
-        <Field label="DESCRIPTION" paddingBottom={12}>
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            placeholder="What should people know?"
-            placeholderTextColor={c.faint}
-            selectionColor={c.coral}
-            style={{
-              fontFamily: font.regular,
-              fontSize: 14.5,
-              lineHeight: 14.5 * 1.55,
-              color: c.ink2,
-              padding: 0,
-            }}
-          />
-        </Field>
-
         <View style={{ gap: 8 }}>
           <Field label="LOCATION" focused>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
@@ -176,22 +220,22 @@ export function CreateStep1() {
             </View>
           </Field>
           <View>
-            {[
-              ...places.filter((p) =>
-                p.title.toLowerCase().includes(query.trim().toLowerCase())
-              ),
-              customPin,
-            ].map((p, i, shown) => (
-              <PlaceRow
-                key={p.title}
-                title={p.title}
-                sub={p.sub}
-                right={p.right}
-                last={i === shown.length - 1}
-                selected={p.title === place}
-                onPress={() => setPlace(p.title)}
-              />
-            ))}
+            {searchFailed ? (
+              <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.coral }}>
+                {searchFailed}
+              </Text>
+            ) : (
+              hits.map((p, i) => (
+                <PlaceRow
+                  key={p.id}
+                  title={p.title}
+                  sub={picking === p.id ? 'Pinning…' : p.sub}
+                  last={i === hits.length - 1}
+                  selected={p.title === place?.title}
+                  onPress={() => pick(p)}
+                />
+              ))
+            )}
           </View>
         </View>
       </Body>
@@ -204,10 +248,19 @@ export function CreateStep1() {
         <PrimaryButton
           label="Next: when & who"
           height={44}
+          // No place, no pin, no room — and no title, now that the field starts
+          // empty rather than prefilled with a mock one.
+          disabled={!place || !title.trim()}
           // Step 2 owns the draft's other half, so what you typed here rides
           // along in the URL — otherwise the room you create isn't the one you
           // described.
-          onPress={() => router.push({ pathname: '/create/details', params: { title, place } })}
+          onPress={() =>
+            place &&
+            router.push({
+              pathname: '/create/details',
+              params: { title: title.trim(), place: place.title, lat: place.lat, lng: place.lng },
+            })
+          }
           style={{ flex: 1 }}
         />
       </Footer>
@@ -275,26 +328,51 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
   );
 };
 
-/** Create, step 2 — when and who. */
-// Shared with onboarding, so a room can't be restricted to a year nobody can
-// pick for themselves.
-const allYears = classYears;
-
-export function CreateStep2({ title, place }: { title?: string; place?: string }) {
+/**
+ * Create, step 2 — when and who. Step 1's half of the draft is required: it
+ * gates `Next` on a picked place, so a missing param is a malformed URL, and
+ * defaulting one would open a room somewhere nobody chose. The route sends you
+ * to NotFound instead.
+ */
+export function CreateStep2({
+  title,
+  place,
+  lat,
+  lng,
+  myYear,
+}: {
+  title: string;
+  place: string;
+  lat: number;
+  lng: number;
+  /** The host's own class year — the only sane seed for the year chips. */
+  myYear?: string;
+}) {
   const { c } = useTheme();
+  const now = useNow();
   const [when, setWhen] = useState('Now');
-  const [cap, setCap] = useState(18);
+  const [cap, setCap] = useState(3);
   const [approve, setApprove] = useState(false);
-  const [yearsOnly, setYearsOnly] = useState(true);
-  const [years, setYears] = useState(["'27", "'28"]);
+  /*
+   * Off, and seeded with your own year. Both were mock leftovers: the toggle
+   * shipped on with `["'27", "'28"]` selected, so a '29 host opened every room
+   * restricted to two years they weren't in — and `feedFor` then hid it from
+   * their own Discover feed. The room was fine, the defaults weren't.
+   *
+   * A restriction is a thing you choose, so it starts off; and choosing it can
+   * no longer exclude you, because the only year pre-selected is yours.
+   */
+  const [yearsOnly, setYearsOnly] = useState(false);
+  const [years, setYears] = useState<string[]>(myYear ? [myYear] : []);
+  // Built once per render rather than rescanned per chip in the year row.
+  const chosenYears = new Set(years);
   const divider = { paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: c.hair } as const;
   const toggleYear = (y: string) =>
     setYears((v) => (v.includes(y) ? v.filter((x) => x !== y) : [...v, y]));
   const previewYears = yearsOnly && years.length ? ` · ${years.join('–')}` : '';
-  // Step 1's values arrive as params; the defaults keep this screen openable
-  // on its own, which is how the design was reviewed.
-  const draftTitle = title || 'Sunset set on Lot D roof';
-  const draftPlace = place || 'Lot D rooftop';
+  // One clock for the label, the preview and the write, so the screen can't
+  // promise a time the room doesn't open at. "Now" is the moment you press it.
+  const startsAt = when === 'Now' ? now : new Date(now.getTime() + 60 * 60_000);
 
   const [opening, setOpening] = useState(false);
   const [failed, setFailed] = useState<string>();
@@ -305,20 +383,24 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
     try {
       const id = await createRoom(
         {
-          title: draftTitle,
-          place: draftPlace,
-          // "Now" means live the moment you press it; "Later" is the design's 8:15.
-          startsAt: when === 'Now' ? new Date() : new Date(Date.now() + 60 * 60_000),
+          title,
+          place,
+          startsAt,
           capacity: cap,
           access: approve ? 'approve' : 'open',
           years: yearsOnly && years.length ? years : undefined,
         },
-        // ponytail: campus centre, because Create still can't place a pin.
-        // The map screen already has the coordinate; this is where it goes.
-        34.0701,
-        -118.4445
+        lat,
+        lng
       );
-      router.replace(`/room/${id}`);
+      // `replace` only swaps this screen for the room — step 1 stayed underneath
+      // in the stack, so "back" from a room you just opened landed you on the
+      // create form you just submitted, with no way out of it but starting over.
+      // Every entry point pushes step 1 then step 2, always exactly two deep, so
+      // dismissing both and pushing fresh lands "back" wherever Create was opened
+      // from instead.
+      router.dismiss(2);
+      router.push(`/room/${id}`);
     } catch (e) {
       setFailed(e instanceof Error ? e.message : 'Could not open the room.');
     } finally {
@@ -328,7 +410,7 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
-      <WizardBar left="Back" step="STEP 2 / 2" right="Draft" onLeft={() => router.back()} />
+      <WizardBar left="Back" step="STEP 2 / 2" onLeft={() => router.back()} />
       <Body contentStyle={{ paddingHorizontal: 22, gap: 18, flexGrow: 1 }}>
         <Text style={[type.display, { color: c.ink }]}>When does the{'\n'}room go live?</Text>
 
@@ -340,24 +422,21 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
             borderBottomWidth: 1,
             borderBottomColor: c.hair,
           }}>
-          {[
-            ['DATE', 'Fri, Sep 12'],
-            ['TIME', '7:15 PM'],
-          ].map(([label, value]) => (
-            <View key={label}>
-              <Eyebrow>{label}</Eyebrow>
-              <Text
-                style={{
-                  fontFamily: font.bold,
-                  fontSize: 18,
-                  letterSpacing: em(-0.015, 18),
-                  color: c.ink,
-                  marginTop: 6,
-                }}>
-                {value}
-              </Text>
-            </View>
-          ))}
+          {/* Derived from the chips beside it, not typed in — both stops are
+              today, so the time is the whole answer. */}
+          <View>
+            <Eyebrow>GOES LIVE</Eyebrow>
+            <Text
+              style={{
+                fontFamily: font.bold,
+                fontSize: 18,
+                letterSpacing: em(-0.015, 18),
+                color: c.ink,
+                marginTop: 6,
+              }}>
+              {clock(startsAt)}
+            </Text>
+          </View>
           <View style={{ marginLeft: 'auto', alignSelf: 'flex-end', flexDirection: 'row', gap: 7 }}>
             {['Now', '+1 hr'].map((w) => (
               <Chip
@@ -444,11 +523,11 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
           />
           {yearsOnly ? (
             <View style={{ flexDirection: 'row', gap: 7 }}>
-              {allYears.map((y) => (
+              {classYears.map((y) => (
                 <YearChip
                   key={y}
                   label={y}
-                  selected={years.includes(y)}
+                  selected={chosenYears.has(y)}
                   onPress={() => toggleYear(y)}
                 />
               ))}
@@ -476,10 +555,10 @@ export function CreateStep2({ title, place }: { title?: string; place?: string }
                 marginTop: 8,
                 paddingRight: 26,
               }}>
-              {draftTitle}
+              {title}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, marginTop: 4 }}>
-              {draftPlace} · {when === 'Now' ? '7:15 PM' : '8:15 PM'} · {cap} seats{previewYears}
+              {place} · {clock(startsAt)} · {cap} seats{previewYears}
             </Text>
             <PeelCorner
               size={26}

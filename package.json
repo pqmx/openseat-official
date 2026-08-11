@@ -1,14 +1,17 @@
 {
-  "name": "openseat-scaffold",
+  "name": "openseat",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.4",
+    "@sentry/react-native": "~7.11.0",
     "@supabase/supabase-js": "^2.111.0",
     "expo": "~57.0.9",
+    "expo-apple-authentication": "~57.0.1",
     "expo-constants": "~57.0.8",
+    "expo-dev-client": "~57.0.10",
     "expo-font": "~57.0.1",
     "expo-linking": "~57.0.4",
     "expo-router": "~57.0.9",
@@ -31,11 +34,12 @@
   },
   "scripts": {
     "postinstall": "patch-package",
-    "start": "expo start",
+    "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web",
+    "ios:device": "xcodebuild -workspace ios/openseatscaffold.xcworkspace -scheme openseatscaffold -configuration Debug -destination 'id=00008150-001854563485401C' -derivedDataPath ios/build -allowProvisioningUpdates build",
     "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON snap.check.ts",
+    "check:policies": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f policies.check.sql",
     "doctor": "npx react-doctor@latest"
   },
   "private": true

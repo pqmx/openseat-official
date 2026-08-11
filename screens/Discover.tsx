@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import { RoomCard, RoomPreview, RoomRow, RoomStatus } from '../components/rooms';
 import { BottomSheet } from '../components/sheet';
-import { Eyebrow, MapSearchBar, PrimaryButton, Toggle } from '../components/ui';
+import { Eyebrow, MapFilterButton, PrimaryButton, Toggle } from '../components/ui';
 import { useNow } from '../api';
 import {
   feedFor,
@@ -192,13 +192,11 @@ const FeedTabs = ({ active, onChange }: { active: string; onChange: (t: string) 
   );
 };
 
-/** The walk-time limits the filter panel offers. */
-const walkLimits = [5, 10, 20];
-
 /**
- * The filter panel, dropped under the search bar. Deliberately does not offer a
- * time window — `FeedTabs` already owns that, and two controls for one axis is
- * how filter UIs start lying to people.
+ * The filter panel, under the filter button. Deliberately does not offer a time
+ * window — `FeedTabs` already owns that, and two controls for one axis is how
+ * filter UIs start lying to people. No distance limit either: nothing measures
+ * one, and that would mean asking for location.
  */
 const Filters = ({
   query,
@@ -225,40 +223,6 @@ const Filters = ({
         borderColor: c.frame,
         boxShadow: `0px 4px 16px ${c.shadowCol}`,
       }}>
-      <View style={{ gap: 8 }}>
-        <Eyebrow>WITHIN A WALK OF</Eyebrow>
-        <View style={{ flexDirection: 'row', gap: 7 }}>
-          {walkLimits.map((m) => {
-            const on = query.maxWalk === m;
-            return (
-              <Pressable
-                key={m}
-                accessibilityRole="button"
-                accessibilityLabel={`${m} minutes or less`}
-                accessibilityState={{ selected: on }}
-                onPress={() => onChange({ ...query, maxWalk: on ? undefined : m })}
-                style={{
-                  paddingVertical: 7,
-                  paddingHorizontal: 12,
-                  borderRadius: radius.chip,
-                  backgroundColor: on ? c.ink : 'transparent',
-                  borderWidth: 1,
-                  borderColor: on ? c.ink : c.hair2,
-                }}>
-                <Text
-                  style={{
-                    fontFamily: font.medium,
-                    fontSize: 12.5,
-                    color: on ? c.surface : c.ink2,
-                  }}>
-                  {m} min
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
       <Pressable
         accessibilityRole="switch"
         accessibilityLabel="Only rooms with a seat"
@@ -290,38 +254,6 @@ const Filters = ({
   );
 };
 
-/**
- * Search and filters, floating over the map. A module-level component, not one
- * built inside `Discover` — a component declared during render is a new type
- * every render, which would remount the search field and swallow every second
- * keystroke.
- */
-const MapControls = ({
-  query,
-  onQuery,
-  narrowed,
-  open,
-  onToggle,
-  onClose,
-}: {
-  query: Query;
-  onQuery: (q: Query) => void;
-  narrowed: boolean;
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-}) => (
-  <>
-    <MapSearchBar
-      text={query.text ?? ''}
-      onText={(text) => onQuery({ ...query, text })}
-      filtersOn={narrowed}
-      onFilters={onToggle}
-    />
-    {open ? <Filters query={query} onChange={onQuery} onClose={onClose} /> : null}
-  </>
-);
-
 /** Same day as `now`, so "Tonight" means tonight. */
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
@@ -343,18 +275,15 @@ const Map = ({
   onSelect,
   onClear,
   mapRef,
-  children,
 }: {
   live: Room[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onClear: () => void;
   mapRef: React.RefObject<MapView | null>;
-  children?: React.ReactNode;
 }) => {
   const { c } = useTheme();
   return (
-  <View style={StyleSheet.absoluteFill}>
     <MapView
       ref={mapRef}
       style={StyleSheet.absoluteFill}
@@ -414,7 +343,6 @@ const Map = ({
         )
       )}
     </MapView>
-  </View>
   );
 };
 
@@ -429,17 +357,15 @@ const FeedItem = ({
   selected,
   onPress,
   onLayout,
-  style,
   children,
 }: {
   room: Room;
   selected: boolean;
   onPress: () => void;
   onLayout: (y: number) => void;
-  style?: ViewStyle;
   children: React.ReactNode;
 }) => (
-  <View style={style} onLayout={(e) => onLayout(e.nativeEvent.layout.y)}>
+  <View onLayout={(e) => onLayout(e.nativeEvent.layout.y)}>
     <Pressable
       pointerEvents="box-only"
       accessibilityRole="button"
@@ -477,9 +403,12 @@ export function Discover({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState<Query>({});
   const [showFilters, setShowFilters] = useState(false);
-  const narrowed = query.maxWalk !== undefined || !!query.openOnly;
-  /** Whether an empty feed is something you did, or just a quiet night. */
-  const searching = narrowed || !!query.text?.trim();
+  /**
+   * Also the answer to "is an empty feed something you did, or a quiet night?"
+   * — the filter panel is the only way to narrow the feed now, so the two
+   * questions have the same answer and no longer need two names.
+   */
+  const narrowed = !!query.openOnly;
 
   const listRef = useAnimatedRef<Animated.ScrollView>();
   const mapRef = useRef<MapView | null>(null);
@@ -496,17 +425,6 @@ export function Discover({
   const selected = live.find((r) => r.id === selectedId) ?? null;
 
   const clear = useCallback(() => setSelectedId(null), []);
-
-  const controls = (
-    <MapControls
-      query={query}
-      onQuery={setQuery}
-      narrowed={narrowed}
-      open={showFilters}
-      onToggle={() => setShowFilters((v) => !v)}
-      onClose={() => setShowFilters(false)}
-    />
-  );
 
   /** Flies the camera to a room's pin; `mapPadding` keeps it clear of the sheet. */
   const center = useCallback((room: Room) => {
@@ -557,83 +475,61 @@ export function Discover({
     [center, live]
   );
 
-  if (live.length === 0) {
-    return (
-      <View style={{ flex: 1, backgroundColor: c.surface }}>
-        <Map
-          live={[]}
-          selectedId={null}
-          onSelect={fromPin}
-          onClear={clear}
-          mapRef={mapRef}
-        />
-        {controls}
-        <BottomSheet
-          index={index}
-          onIndexChange={setIndex}
-          detents={detents}
-          listRef={listRef}
-          header={
-            <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14 }}>
-              <RoomStatus
-                status={{
-                  label: searching ? 'NOTHING MATCHES' : 'NOTHING LIVE WITHIN 15 MIN',
-                  tone: 'off',
-                }}
-              />
-            </View>
-          }
-          contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 22 }}>
-          <View>
-            <Text
-              style={[
-                type.display,
-                { fontSize: 24, lineHeight: 24 * 1.2, letterSpacing: em(-0.022, 24), color: c.ink },
-              ]}>
-              {/* An empty result you caused reads differently from a quiet night. */}
-              {searching ? 'No rooms match\nthat search.' : 'Quiet out there.\nTuesdays usually are.'}
-            </Text>
-            <Text
-              style={{
-                fontFamily: font.regular,
-                fontSize: 14,
-                lineHeight: 14 * 1.55,
-                color: c.mute,
-                marginTop: 10,
-                maxWidth: 300,
-              }}>
-              {searching
-                ? 'Try a shorter search, a longer walk, or open a room of your own.'
-                : '31 rooms opened near campus last week. A blanket and a speaker is a room — takes about forty seconds.'}
-            </Text>
-          </View>
+  // Nothing live is a state of the same screen, not a screen of its own — the
+  // map, the controls and the sheet are identical either way, only the header
+  // and what's inside the sheet change.
+  const empty = live.length === 0;
 
-          {searching ? (
-            <PrimaryButton label="Clear search" onPress={() => setQuery({})} />
-          ) : (
-            <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
-          )}
-
-          {upcoming.length ? (
-            <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
-              <Eyebrow>LATER THIS WEEK</Eyebrow>
-              {upcoming.slice(0, 3).map((room, i) => (
-                <View
-                  key={room.id}
-                  style={
-                    i === 0
-                      ? undefined
-                      : { paddingTop: 14, borderTopWidth: 1, borderTopColor: c.hairFaint }
-                  }>
-                  <RoomRow room={room} now={now} small />
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </BottomSheet>
+  const header = empty ? (
+    <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14 }}>
+      <RoomStatus status={{ label: narrowed ? 'NOTHING MATCHES' : 'NOTHING LIVE', tone: 'off' }} />
+    </View>
+  ) : selected ? (
+    // Selected, the header names the room instead of counting rooms —
+    // the count is what you needed before you picked one.
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 22,
+        paddingTop: 6,
+        paddingBottom: 14,
+      }}>
+      {/* Named the place, not a distance — there is no measured one. */}
+      <Text
+        numberOfLines={1}
+        style={{ flex: 1, fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
+        {selected.place}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to all rooms"
+        hitSlop={12}
+        onPress={clear}>
+        <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.coral }}>All rooms</Text>
+      </Pressable>
+    </View>
+  ) : (
+    <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14, gap: 14 }}>
+      <View
+        style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Text
+          style={{
+            fontFamily: font.bold,
+            fontSize: 17,
+            letterSpacing: em(-0.015, 17),
+            color: c.ink,
+          }}>
+          {live.length} {live.length === 1 ? 'room' : 'rooms'} live nearby
+        </Text>
+        <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
+          {now.getHours() >= 17 ? 'Tonight' : 'Today'}
+        </Text>
       </View>
-    );
-  }
+      <FeedTabs active={tab} onChange={setTab} />
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -644,61 +540,71 @@ export function Discover({
         onClear={clear}
         mapRef={mapRef}
       />
-      {controls}
+      <MapFilterButton filtersOn={narrowed} onFilters={() => setShowFilters((v) => !v)} />
+      {showFilters ? (
+        <Filters query={query} onChange={setQuery} onClose={() => setShowFilters(false)} />
+      ) : null}
       <BottomSheet
         index={index}
         onIndexChange={setIndex}
         detents={detents}
         listRef={listRef}
-        header={
-          selected ? (
-            // Selected, the header names the room instead of counting rooms —
-            // the count is what you needed before you picked one.
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingHorizontal: 22,
-                paddingTop: 6,
-                paddingBottom: 14,
-              }}>
-              <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
-                {selected.walkMinutes} min from you
+        header={header}
+        contentStyle={
+          empty
+            ? { paddingHorizontal: 22, paddingBottom: 24, gap: 22 }
+            : { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 24 }
+        }>
+        {empty ? (
+          <>
+            <View>
+              <Text
+                style={[
+                  type.display,
+                  { fontSize: 24, lineHeight: 24 * 1.2, letterSpacing: em(-0.022, 24), color: c.ink },
+                ]}>
+                {/* An empty result you caused reads differently from a quiet night. */}
+                {narrowed ? 'No rooms match\nthose filters.' : 'Quiet out there.'}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back to all rooms"
-                hitSlop={12}
-                onPress={clear}>
-                <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.coral }}>
-                  All rooms
-                </Text>
-              </Pressable>
+              <Text
+                style={{
+                  fontFamily: font.regular,
+                  fontSize: 14,
+                  lineHeight: 14 * 1.55,
+                  color: c.mute,
+                  marginTop: 10,
+                  maxWidth: 300,
+                }}>
+                {narrowed
+                  ? 'Every room nearby is full. Clear the filter to see them, or open one of your own.'
+                  : 'A blanket and a speaker is a room — takes about forty seconds.'}
+              </Text>
             </View>
-          ) : (
-            <View style={{ paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14, gap: 14 }}>
-              <View
-                style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                <Text
-                  style={{
-                    fontFamily: font.bold,
-                    fontSize: 17,
-                    letterSpacing: em(-0.015, 17),
-                    color: c.ink,
-                  }}>
-                  {live.length} {live.length === 1 ? 'room' : 'rooms'} live nearby
-                </Text>
-                <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute2 }}>
-                  {now.getHours() >= 17 ? 'Tonight' : 'Today'}
-                </Text>
+
+            {narrowed ? (
+              <PrimaryButton label="Clear filters" onPress={() => setQuery({})} />
+            ) : (
+              <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
+            )}
+
+            {upcoming.length ? (
+              <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
+                <Eyebrow>LATER THIS WEEK</Eyebrow>
+                {upcoming.slice(0, 3).map((room, i) => (
+                  <View
+                    key={room.id}
+                    style={
+                      i === 0
+                        ? undefined
+                        : { paddingTop: 14, borderTopWidth: 1, borderTopColor: c.hairFaint }
+                    }>
+                    <RoomRow room={room} now={now} small />
+                  </View>
+                ))}
               </View>
-              <FeedTabs active={tab} onChange={setTab} />
-            </View>
-          )
-        }
-        contentStyle={{ paddingHorizontal: 22, paddingTop: 18, paddingBottom: 24 }}>
-        {selected ? (
+            ) : null}
+          </>
+        ) : selected ? (
           <RoomPreview room={selected} now={now} />
         ) : shown.length === 0 ? (
           <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
@@ -708,7 +614,7 @@ export function Discover({
           // One wrapper per room, all siblings, so every `onLayout` reports an
           // offset in the same coordinate space and `scrollTo` can use it.
           <View style={{ gap: 16 }}>
-            {shown.map((room, i) => (
+            {shown.map((room) => (
               <FeedItem
                 key={room.id}
                 room={room}
@@ -716,14 +622,8 @@ export function Discover({
                 onPress={() => fromRow(room.id)}
                 onLayout={(y) => {
                   rowY.current[room.id] = y;
-                }}
-                style={
-                  i === 0 || i === shown.length - 1
-                    ? undefined
-                    : { paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: c.hair }
-                }>
-                {/* The nearest room leads with the full card. */}
-                {i === 0 ? <RoomCard room={room} now={now} /> : <RoomRow room={room} now={now} />}
+                }}>
+                <RoomCard room={room} now={now} />
               </FeedItem>
             ))}
           </View>

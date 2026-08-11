@@ -18,7 +18,13 @@ export default function TabsLayout() {
   if (needsOnboarding) return <Redirect href="/onboarding" />;
 
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={() => <TabBar />}>
+    // Tabs default to `animation: 'none'`, which is a hard cut — the next
+    // screen is simply there on the next frame. 'fade' rather than 'shift'
+    // because shift slides sideways, and sideways already means "deeper into
+    // the stack" everywhere else in this app.
+    <Tabs
+      screenOptions={{ headerShown: false, animation: 'fade' }}
+      tabBar={() => <TabBar />}>
       <Tabs.Screen name="discover" />
       <Tabs.Screen name="rooms" />
       <Tabs.Screen name="you" />

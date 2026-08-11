@@ -1,18 +1,16 @@
+import * as Apple from 'expo-apple-authentication';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Text, TextInput, useColorScheme, View } from 'react-native';
 import { saveProfile } from '../api';
 import { Body, Eyebrow, Field, PrimaryButton, StatusStrip, YearChip } from '../components/ui';
 import { classYears } from '../data';
 import { useSession } from '../session';
-import { font, type, useTheme } from '../theme';
+import { font, radius, type, useTheme } from '../theme';
 
 /**
- * The two screens Google can't draw for us. AGENTS.md deleted the hand-drawn
- * sign-in and profile-setup deliberately — Google owns the credential, and the
- * UCLA-specific fields it doesn't return wanted designing against what it
- * actually gives back. It gives back a name and an email, so that is all these
- * assume.
+ * The gate and the two fields behind it. Both assume the credential carries a
+ * name and an email and nothing else — which is all Google and Apple give back.
  */
 
 const Problem = ({ message }: { message: string }) => {
@@ -30,18 +28,36 @@ const Problem = ({ message }: { message: string }) => {
   );
 };
 
-/** The gate. One button, because there is exactly one way in. */
+/**
+ * The gate: two buttons, no password.
+ *
+ * Neither provider is asked to prove the address is a UCLA one — Google can't
+ * be told about two hosted domains at once, and Apple can't be told at all.
+ * `handle_new_user()` raises on any other domain and the message it raises is
+ * what lands in `failed`, so there is one copy of that rule and it's the one
+ * that can actually refuse. The Apple path checks the token's email before
+ * sending it purely so the refusal names the address; see `session.tsx`.
+ */
 export function SignIn() {
   const { c } = useTheme();
-  const { signIn } = useSession();
+  const dark = useColorScheme() === 'dark';
+  const { signInWithGoogle, signInWithApple } = useSession();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string>();
+  // Apple's own availability check rather than `Platform.OS`: it's false on
+  // Android, on the simulator without an Apple ID, and on old iOS.
+  const [hasApple, setHasApple] = useState(false);
+  useEffect(() => {
+    Apple.isAvailableAsync().then(setHasApple, () => setHasApple(false));
+  }, []);
 
-  const go = async () => {
+  const go = (run: () => Promise<void>) => async () => {
     setBusy(true);
     setFailed(undefined);
     try {
-      await signIn();
+      await run();
+      // No navigation: the session lands, the gate re-renders as `/onboarding`
+      // or `/discover`. Pushing from here would race that.
     } catch (e) {
       setFailed(e instanceof Error ? e.message : 'Sign-in failed.');
     } finally {
@@ -70,18 +86,32 @@ export function SignIn() {
             lineHeight: 14 * 1.55,
             color: c.mute,
           }}>
-          Rooms open across Westwood all night. Sign in with your UCLA account to see the ones
-          near you.
+          Rooms open across Westwood all night. Use your UCLA account to see the ones near you.
         </Text>
 
         {failed ? <Problem message={failed} /> : null}
 
         <View style={{ marginTop: 8, gap: 12 }}>
           <PrimaryButton
-            label={busy ? 'Signing in…' : 'Continue with Google'}
+            label={busy ? 'One moment…' : 'Continue with Google'}
             disabled={busy}
-            onPress={go}
+            onPress={go(signInWithGoogle)}
           />
+          {hasApple ? (
+            // Apple's own button, because their guidelines require it and
+            // because a hand-drawn one is the sort of thing review rejects.
+            <Apple.AppleAuthenticationButton
+              buttonType={Apple.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={
+                dark
+                  ? Apple.AppleAuthenticationButtonStyle.WHITE
+                  : Apple.AppleAuthenticationButtonStyle.BLACK
+              }
+              cornerRadius={radius.md}
+              style={{ height: 46 }}
+              onPress={go(signInWithApple)}
+            />
+          ) : null}
           <Text
             style={{
               fontFamily: font.regular,
@@ -90,7 +120,8 @@ export function SignIn() {
               color: c.faint,
               textAlign: 'center',
             }}>
-            UCLA accounts only — @ucla.edu or @g.ucla.edu.
+            UCLA accounts only — @ucla.edu or @g.ucla.edu. Signing in with Apple works only if
+            your Apple ID is one of those, with Hide My Email off.
           </Text>
         </View>
       </Body>

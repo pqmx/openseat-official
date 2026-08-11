@@ -6,13 +6,6 @@ import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-nativ
  */
 type IconProps = { size?: number; color: string };
 
-export const SearchIcon = ({ size = 14, color }: IconProps) => (
-  <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-    <Circle cx={7} cy={7} r={5} strokeWidth={1.4} stroke={color} />
-    <Path d="M11 11l3.5 3.5" strokeWidth={1.4} strokeLinecap="round" stroke={color} />
-  </Svg>
-);
-
 export const FilterIcon = ({ size = 16, color }: IconProps) => (
   <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
     <Path d="M2 5h14M4.5 9h9M7 13h4" strokeWidth={1.4} strokeLinecap="round" stroke={color} />

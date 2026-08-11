@@ -1,0 +1,35 @@
+# React Doctor — finds security, performance, correctness, accessibility,
+# bundle-size, and architecture issues in React codebases.
+#
+# Advisory: it reports findings but never fails the check. To gate on them, see
+# the `blocking` option at https://www.react.doctor/ci
+
+name: React Doctor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — a shallow checkout has no merge base, so PR runs would
+      # report every pre-existing issue in the changed files, not just new ones.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: millionco/react-doctor@v2

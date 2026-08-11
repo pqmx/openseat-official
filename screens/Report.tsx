@@ -12,7 +12,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { submitReport, useWrite } from '../api';
 import { useSession } from '../session';
-import { em, font, radius, type, useTheme } from '../theme';
+import { em, font, radius, useTheme } from '../theme';
 
 const Reason = ({
   label,

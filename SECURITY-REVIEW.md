@@ -21,8 +21,12 @@ three migrations: `tighten_profile_and_member_visibility`,
   package name + SHA-1 in the Cloud console.
 - `handle_new_user` and `private.is_member` are `security definer` with `search_path = ''`.
   `create_room` is `security invoker`, so the insert policies authorise it — no escalation.
-- No `WebView`, no `eval`, no plaintext-HTTP fetch. The one `Linking.openURL` is a fixed
-  `maps.apple.com` scheme with `encodeURIComponent` around the user-controlled part.
+- No `WebView`, no `eval`, no plaintext-HTTP fetch. Both `Linking.openURL` calls go through
+  `mapsUrl` in `data.ts` — fixed `https://maps.apple.com` / `https://www.google.com` hosts,
+  numeric coordinates, and `encodeURIComponent` around the one user-controlled part
+  (`room.place`). The Apple link was `http://` and searched by address text until 2026-08-01;
+  it is https and coordinate-based now, and a non-member's link carries the 3dp approximation
+  rather than the exact pin the server withheld.
 
 ## Fixed
 
@@ -99,20 +103,33 @@ symmetric, folded into `can_see_room`.
 
 ## Still yours to do
 
+### 6. Email/password sign-up — REOPENED 2026-08-04, was closed, deliberately
+
+This section used to read "RESOLVED, no action needed" because `POST /auth/v1/signup` returned
+`email_provider_disabled`. **The Email provider is on now, and email confirmation is being
+turned off**, on purpose, to get off Google while auth isn't the work. So the thing this
+section predicted has happened, and it should be read as the open risk it is:
+
+> Turn the Email provider on and the Google-only UI stops meaning anything, because the signup
+> trigger checks the email's domain, not whether the person owns the inbox.
+
+That is now the state. **Anyone who can type any `@ucla.edu` or `@g.ucla.edu` string gets an
+account**, without ever receiving mail at it — and they don't need the app to do it, they POST
+to the auth endpoint with the publishable key that ships in the bundle. The year-gated feed,
+the roster and every "someone from UCLA" promise rest on that address, so what's protecting
+them right now is nothing.
+
+Two ways to close it, and the app supports both without a code change:
+
+- Turn **Confirm email** back on (Authentication → Sign In / Providers → Email). Owning the
+  inbox becomes the check again; `signUp` already handles the no-session response by telling
+  you to go read your mail.
+- Or put Google back and turn the Email provider off, which returns the backend to refusing
+  every method but one — the shape that closed this the first time.
+
+The leaked-password advisor stops being moot while this is open, too: real passwords exist now.
+
 ## Closed since
-
-### 6. Email/password sign-up — RESOLVED, no action needed
-
-Probed directly: `POST /auth/v1/signup` returns `email_provider_disabled`. Google is the only
-way in, so nobody can claim a `@ucla.edu` address they don't own, and the leaked-password
-advisor is moot.
-
-Worth keeping straight *why*, because it governs any future change: the protection isn't that
-the app only offers Google. An attacker never opens the app — they POST to the auth endpoint
-with the publishable key, which ships in the bundle. What protects the year-gated feed is that
-the **backend** refuses every method except Google. Turn the Email provider on and the
-Google-only UI stops meaning anything, because the signup trigger checks the email's domain,
-not whether the person owns the inbox.
 
 ### 7. Demo rows — DELETED 2026-08-01
 
@@ -126,6 +143,33 @@ and `policies.check.sql` still passes 28/28 against the empty database.
 ### 8. No rate limit on `create_room`
 
 One account can still open rooms in a loop. Needs infrastructure, not a policy.
+
+### 9. Place search is signed-in-only, but not rate limited — same shape as #8
+
+`places-search` gates on `auth.getUser()`, so a stranger can't spend the Google quota. A
+signed-in student still can, and each call is billed. The 350ms debounce and the 3-character
+floor are client-side and therefore not the enforcement — anyone can POST the function
+directly with their own token. Bounded today by a daily quota cap in the Cloud console, which
+caps the bill without stopping the abuser. A per-user counter belongs here eventually.
+
+## Corrections to the second pass
+
+**I got the Places key wrong first time.** The location field originally called
+`places:searchText` straight from `api.ts` with `EXPO_PUBLIC_GOOGLE_PLACES_KEY`, and both
+`AGENTS.md` and `.env.example` said restricting the key to bundle `com.openseat.app` made
+that safe. It does not. Google's iOS/Android application restrictions bind their **native
+SDKs**; the REST web service doesn't honour them, and App Check doesn't cover it either.
+Google's recommended restriction for the Places web service is `IP addresses`, with an
+explicit note that this is impractical for mobile apps and that those should use a proxy
+server. The key would have been extractable from the binary with no working restriction
+behind it, on a per-request-billed API.
+
+Now: `supabase/functions/places-search`, key held as a Supabase secret, session checked
+before the call. Worth keeping straight *why*, because it generalises to the next key —
+`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` ships safely and this one couldn't, and the difference
+isn't the prefix. It's that RLS stands behind the publishable key and nothing stands behind a
+Places key. Before bundling any credential, name what enforces the limit when someone holds
+it. If the answer is "the app wouldn't do that", it isn't enforcement.
 
 ## Resolved by deletion
 
