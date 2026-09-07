@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {
   feedFor,
-  hostOf,
   isIn,
   matchesQuery,
   myRooms,
@@ -85,7 +84,6 @@ assert.equal(roomById(all, 'does-not-exist'), undefined);
 assert.equal(roomById(all, 'b')?.id, 'b');
 
 // The room carries its host, so a room can no longer credit the wrong person.
-assert.equal(hostOf(room({ host: other })).id, 'other');
 
 /*
  * The pin is whatever the server sent, and nothing else. `room_pins` has its own

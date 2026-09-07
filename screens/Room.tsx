@@ -39,7 +39,6 @@ import {
 import {
   feedFor,
   hasAsked,
-  hostOf,
   isIn,
   isLive,
   mapsUrl,
@@ -73,7 +72,7 @@ const RoomTopBar = ({
   const { me } = useSession();
   // Reporting your own room would only ever name yourself, so from the host's
   // side the ⋯ reports the room alone.
-  const host = hostOf(room);
+  const host = room.host;
   const target =
     me && host.id === me.id
       ? `/report?room=${room.id}`
@@ -350,7 +349,7 @@ export function Room({ room, reload }: RoomScreenProps) {
   const { me } = useSession();
   const now = useNow();
   const { busy, run } = useWrite();
-  const host = hostOf(room);
+  const host = room.host;
   const joined = !!me && isIn(room, me);
   const asked = !!me && hasAsked(room, me);
   return (
@@ -708,7 +707,7 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
   const { c } = useTheme();
   const { me } = useSession();
   const now = useNow();
-  const host = hostOf(room);
+  const host = room.host;
   const last = room.updates[0];
   const alternative = feedFor(rooms, me?.year ?? '', now).find(
     (r) => r.id !== room.id && isLive(r, now)

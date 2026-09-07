@@ -67,12 +67,6 @@ export const hostedBy = (rooms: Room[], personId: string, now: Date) =>
     .filter((r) => r.host.id === personId && !r.canceledAt)
     .sort((a, b) => Number(isLive(b, now)) - Number(isLive(a, now)));
 
-/** The room carries its host, so this is now a field read kept as a name. */
-export const hostOf = (room: Room) => room.host;
-
-/** Everyone shown in a roster. */
-export const rosterOf = (room: Room) => room.attendees;
-
 export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attendees.length);
 export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
 export const isHost = (room: Room, person: Person) => room.host.id === person.id;

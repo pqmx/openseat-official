@@ -1,10 +1,8 @@
 import { Pressable, Text, View } from 'react-native';
 import {
-  hostOf,
   isIn,
   isLive,
   metaOf,
-  rosterOf,
   seatsLeft,
   statusOf,
   type Room,
@@ -42,7 +40,7 @@ export const RoomStatus = ({ status, small }: { status: Status; small?: boolean 
 /** The three overlapping avatars and the tail count on a live card. */
 const AvatarStack = ({ room }: { room: Room }) => {
   const { c } = useTheme();
-  const shown = rosterOf(room).slice(0, 3);
+  const shown = room.attendees.slice(0, 3);
   const rest = room.attendees.length - shown.length;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -84,7 +82,7 @@ export const RoomCard = ({ room, now }: { room: Room; now: Date }) => {
       </Text>
       {/* The avatar row below already carries the head count. */}
       <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 5 }}>
-        {room.place} · {hostOf(room).name}
+        {room.place} · {room.host.name}
       </Text>
       <View
         style={{
@@ -180,7 +178,7 @@ export const Roster = ({
   limit?: number;
 }) => {
   const { me } = useSession();
-  const named = rosterOf(room).slice(0, limit);
+  const named = room.attendees.slice(0, limit);
   const unnamed = room.attendees.length - named.length;
   const open = seatsLeft(room);
   return (
@@ -206,7 +204,7 @@ export const Roster = ({
 export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
   const { c } = useTheme();
   const { me } = useSession();
-  const host = hostOf(room);
+  const host = room.host;
   const joined = !!me && isIn(room, me);
   const full = seatsLeft(room) === 0;
   const latest = room.updates[0];
