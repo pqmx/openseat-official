@@ -1,54 +1,28 @@
-# Apple launch checklist
+# iPhone release checklist
 
-This is the work that cannot be completed safely from the repository alone. The first release is **iPhone-only**. iPad support and real-time/push notifications are deliberately out of scope.
+## Accounts and services
 
-## Accounts and credentials to obtain
+- [ ] Apple Developer membership, App Store Connect record (`com.pqmx.openseat`), and production EAS signing credentials.
+- [ ] Production Supabase/public environment values, Google OAuth client IDs and iOS URL scheme, server-only Places key, and Sentry/source-map credentials.
+- [ ] Configure Apple Sign In for the App ID and Supabase before enabling its app feature flag.
+- [ ] Verify UCLA and g.ucla.edu sign-in; reject non-campus and Apple relay addresses. Keep production email/password and anonymous signup disabled.
+- [ ] Apply migrations before the client release; run policy checks on a disposable production-like database and verify staging API compatibility.
 
-- [ ] Active Apple Developer Program membership.
-- [ ] App Store Connect app record for bundle ID `com.pqmx.openseat`.
-- [ ] Production EAS credentials and App Store Connect API key.
-- [ ] Production Supabase project URL and publishable key.
-- [ ] Google OAuth web and iOS client IDs, with the iOS URL scheme matching `app.json`.
-- [ ] Server-only Google Places key stored as a Supabase secret.
-- [ ] Production Sentry DSN and source-map upload credentials.
+## Policies and operations
 
-Never put an Apple private key, OAuth client secret, Supabase secret/service-role key, Places key, or Sentry auth token in an `EXPO_PUBLIC_` variable.
+- [ ] Publish privacy, community guidelines, support, and safety contact URLs.
+- [ ] Set retention periods for profiles, rooms, updates, reports, blocks, account tombstones, Places counters, and crash reports.
+- [ ] Assign moderation ownership, alerts, response targets, escalation, and suspension procedures.
+- [ ] Configure Google project quotas/billing alerts and verify Sentry source maps and alerts.
+- [ ] Verify anonymous access is denied and no service secrets ship in the app.
 
-## Policies and public URLs
+## Release testing and submission
 
-- [ ] Publish a privacy policy describing account/profile data, approximate and precise room locations, reports/blocks, Supabase, Google Places, Google Sign-In, Apple Sign In, and Sentry.
-- [ ] Publish community guidelines covering harassment, threats, impersonation, scams, discrimination, unsafe locations, and enforcement.
-- [ ] Publish a monitored support and safety contact URL/email.
-- [ ] Document retention periods for rooms, room updates, reports, blocks, deleted-account tombstones, Places counters, and Sentry events.
-- [ ] Complete App Store Connect App Privacy, age rating, export compliance, and content-rights questionnaires to match production behavior.
+- [ ] Run app, database, static-analysis, and [Maestro checks](.maestro/README.md).
+- [ ] Rebuild native dependencies and test a production-mode TestFlight build on physical iPhones.
+- [ ] Test sign-in/cancellation, onboarding, account switching/deletion, and shared-link cold launch.
+- [ ] With two accounts, test create/request/approve/decline/join/withdraw/leave, host closure, four-hour expiry, concurrent last-seat requests, and report/block/unblock.
+- [ ] Test maps, sheet gestures, pagination, keyboards, offline recovery, VoiceOver, text scaling, Reduce Motion, dark mode, and the smallest supported iPhone.
+- [ ] Complete App Store metadata, screenshots, privacy/age-rating/export/content-rights forms, and provide a UCLA-eligible review account with navigation instructions.
 
-## Supabase production settings
-
-- [ ] Disable email/password sign-in, or require email confirmation. The shipped UI uses Apple and Google only.
-- [ ] Confirm both `ucla.edu` and `g.ucla.edu` accounts work while non-UCLA and Apple relay addresses are rejected.
-- [ ] Apply every migration and run `npm run check:policies` against a disposable production-like database.
-- [ ] Configure report alerts, a moderator owner/rotation, response targets, escalation steps, and account suspension enforcement.
-- [ ] Verify that anonymous callers cannot read user or room data and that the service-role key never ships in the app.
-
-## App Store submission
-
-- [ ] Supply iPhone screenshots, name, subtitle, description, keywords, category, copyright, privacy URL, and support URL.
-- [ ] Give App Review a controlled UCLA-eligible review account and clear navigation instructions; do not add a client-side bypass.
-- [ ] Confirm Sign in with Apple is enabled for the App ID and Supabase provider.
-- [ ] Set every production environment variable in EAS and build a clean release archive.
-- [ ] Upload a TestFlight build and complete the device test plan below before submission.
-
-## Automated and physical-device checks
-
-- [ ] Run `npm run check`, `npm run doctor`, `npm run check:policies`, and the Maestro suites documented in `.maestro/README.md`.
-- [ ] On a physical iPhone, test first and returning Apple sign-in, Google sign-in, cancellation, and rejected non-UCLA identities.
-- [ ] Test onboarding, create/join/request/approve/decline/leave/cancel, report/block/unblock, account deletion, and a cold relaunch.
-- [ ] Disable connectivity while viewing each primary screen; confirm the offline banner appears, retry works, and failed mutations explain what happened.
-- [ ] Test VoiceOver, accessibility text sizes, Reduce Motion, light/dark mode, and the smallest supported iPhone.
-- [ ] Send a production-mode Sentry test event and verify symbolicated source maps and alerts.
-
-## Explicitly deferred
-
-- Android builds and store material.
-- iPad layouts and screenshots.
-- Push and real-time notifications. Users must reopen or refresh the app to see room changes; launch copy must not promise instant alerts.
+Android, iPad, and push notifications are deferred. Active screens poll for changes; release copy must not promise push alerts.
