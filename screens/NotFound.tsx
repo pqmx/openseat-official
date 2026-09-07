@@ -4,12 +4,7 @@ import { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { font, radius, type, useTheme } from '../theme';
 
-/**
- * Two routes end up here: an address that matches no route at all, and
- * `/room/[id]` for an id that isn't a room. Same sentence covers both, and
- * `roomById` returning undefined is what makes the second one reachable —
- * it used to render whichever room happened to be first.
- */
+/** Fallback for unmatched routes and unavailable rooms. */
 export function NotFound() {
   const { c } = useTheme();
   return (
@@ -19,16 +14,7 @@ export function NotFound() {
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
         The link may be old, or the host closed it.
       </Text>
-      {/*
-        `replace`, not a plain link. A bare `href` navigates, which leaves the
-        dead route on the stack — so "Back to Discover" got you to Discover and
-        the very next back gesture put you straight back on this screen, with
-        nothing behind it but the address that already didn't resolve.
-
-        Same trap `Create` documents: the screen you are leaving is spent, so it
-        has to be swapped rather than stacked on top of. `RoomCanceled` and
-        leaving a room both `router.replace('/discover')` for this reason.
-      */}
+      {/* Replace the dead route so Back cannot return to it. */}
       <Link
         href="/discover"
         replace
@@ -40,20 +26,10 @@ export function NotFound() {
   );
 }
 
-/**
- * A route that threw. Exported as `ErrorBoundary` from the routes worth
- * isolating, so one broken screen doesn't take the whole app down with it —
- * the tab bar survives and you can walk away from the wreck. The root boundary
- * in `app/_layout.tsx` stays the backstop for everything else, and it can't use
- * the theme because the provider is what failed; here it's still above us.
- */
+/** Route error boundary rendered inside the theme provider. */
 export function RouteError({ error, retry }: ErrorBoundaryProps) {
   const { c } = useTheme();
-  // The root boundary in `_layout` never sees these — an inner one catches
-  // first — so the report has to happen here or `/discover` and `/room/[id]`
-  // throw into silence. Keyed on the error for the same reason it is there:
-  // `retry` re-renders with the same object, and a crash loop would send one
-  // event per render.
+  // Inner boundaries report their own errors, once per error object.
   useEffect(() => {
     Sentry.captureException(error);
   }, [error]);

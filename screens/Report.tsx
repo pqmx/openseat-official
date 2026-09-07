@@ -68,17 +68,7 @@ const reasons = [
   { label: 'Something else' },
 ];
 
-/**
- * Report & block. Reached as `/report?room=…&person=…&name=…`: the two ids are
- * what gets written, `name` only addresses the sheet. Naming somebody you can't
- * see is pointless rather than dangerous — the row is yours, and `reports_select`
- * shows it to nobody else.
- *
- * The design draws a dimmed, desaturated room behind the sheet because the mock
- * had no modal to put it behind. Here `presentation: 'formSheet'` leaves the
- * real screen showing, so the hand-drawn backdrop was two paragraphs of fixture
- * text pretending to be whatever you were actually looking at. It's gone.
- */
+/** Report or block the supplied person/room IDs; name is display text only. */
 export function ReportSheet() {
   const { c } = useTheme();
   const { me } = useSession();
