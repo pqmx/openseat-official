@@ -169,10 +169,7 @@ export const RoomRow = ({
   );
 };
 
-/**
- * Who's in a room, as faces. Lives here rather than in `screens/Room.tsx` so
- * the room screen and the map's preview can't drift apart on what a roster is.
- */
+/** Shared roster for room screens and map previews. */
 export const Roster = ({
   room,
   showOpenSeats,
@@ -183,9 +180,6 @@ export const Roster = ({
   limit?: number;
 }) => {
   const { me } = useSession();
-  // There used to be an `extra` prop for people approved during this session,
-  // because approving was local state. It's a write now, so the roster the
-  // refetch brings back already has them in it.
   const named = rosterOf(room).slice(0, limit);
   const unnamed = room.attendees.length - named.length;
   const open = seatsLeft(room);

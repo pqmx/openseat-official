@@ -1,15 +1,7 @@
 // `.ts` so node can run data.check.ts unbundled, same as time.check.ts.
 import { elapsed, when } from './time.ts';
 
-/**
- * The app's model and every label derived from it. Pure — no React, no network.
- * `api.ts` fetches Supabase rows and maps them into these shapes; screens read
- * only from here, so the derivations are identical wherever a room appears.
- *
- * The viewer is always an argument. It used to be a module-level `you`, which
- * cannot survive a real session: two accounts on one device, or a signed-out
- * first frame, would both read whoever was hardcoded.
- */
+/** Pure app models and derived labels. Viewer identity is passed explicitly. */
 
 export type Tone = 'fill' | 'water' | 'park';
 
@@ -152,11 +144,7 @@ export const mapsUrl = (room: Room, app: MapsApp) => {
     : `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 };
 
-/**
- * What the feed's filter panel narrows by. An object rather than a bare boolean
- * so a second filter doesn't have to change `matchesQuery` and `narrowed` to
- * add itself back.
- */
+/** Optional feed filters. */
 export type Query = { openOnly?: boolean };
 
 /** A limit, so a room passes by default and this can only reject. */
@@ -187,20 +175,10 @@ export const metaOf = (room: Room, now: Date) =>
       : `${room.attendees.length} of ${room.capacity} seats`,
   ].join(' · ');
 
-/** The four ways `/room/[id]` can draw itself. */
+/** Room route states. */
 export type RoomView = 'member' | 'host' | 'requests' | 'canceled';
 
-/**
- * Which of the four a room opens as. The design draws them and the difference is
- * entirely who you are to the room, so decide it in one place. This is the only
- * thing that decides: the `?view=` override the route used to accept is gone,
- * because joining and ending a room are real writes and the refetch already
- * changes who you are to the room.
- *
- * There was a fifth, `casual` — the pre-join screen for a room that withheld its
- * exact pin. Nothing could ever mark a room casual, so it was never reachable;
- * the column and its policy clause went with it.
- */
+/** Select the room screen from lifecycle state and viewer membership. */
 export const viewOf = (room: Room, me: Person): RoomView => {
   if (room.canceledAt) return 'canceled';
   if (isHost(room, me)) return room.access === 'approve' ? 'requests' : 'host';
