@@ -36,8 +36,7 @@ const name = {
   letterSpacing: em(-0.022, 25),
 } as const;
 
-/** Someone else's answer. The `placeholder` variant went with the fake ones —
- *  an unanswered prompt is now simply absent from `person.prompts`. */
+/** A profile prompt with an answer. */
 const Prompt = ({ label, answer }: { label: string; answer: string }) => {
   const { c } = useTheme();
   return (
@@ -81,11 +80,6 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          {/*
-            Initials, not a dashed "Portrait" box. There's no upload path, so a
-            photo slot was a promise the app couldn't keep — and initials are
-            already how a person reads in every roster and feed card.
-          */}
           <Avatar initials={person.initials} tone={person.tone} size={92} />
           <View style={{ flexShrink: 1 }}>
             <Text style={[name, { color: c.ink }]}>{person.name}</Text>
@@ -149,12 +143,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
   );
 }
 
-/**
- * One prompt, answered in place. A `TextInput` from the start rather than a tap
- * that swaps the text for a field: the swap needs an `editing` flag, a way out
- * of it, and a first tap that lands somewhere other than the caret. This is the
- * same glyphs either way, and the placeholder does the empty state.
- */
+/** Editable profile answer with a placeholder for empty values. */
 const PromptField = ({
   q,
   placeholder,
@@ -192,13 +181,7 @@ const PromptField = ({
   );
 };
 
-/**
- * Your own profile — the one screen you can write from. It used to be
- * `ProfileEmpty`, which drew the day you signed up and never any other day: two
- * prompts typed in as decoration, "None yet" under rooms you host regardless of
- * how many you hosted. Everything here derives from `me` and `rooms` now, so
- * the empty state is what an empty profile looks like rather than a copy of one.
- */
+/** Profile editing, hosted rooms, and account settings. */
 export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
   const { c } = useTheme();
   const { signOut, deleteAccount, reloadMe } = useSession();

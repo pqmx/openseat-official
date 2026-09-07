@@ -350,7 +350,7 @@ export function CreateStep2({
   place: string;
   lat: number;
   lng: number;
-  /** The host's own class year — the only sane seed for the year chips. */
+  /** Preselected and required when restricting by class year. */
   myYear?: string;
 }) {
   const { c } = useTheme();
@@ -358,15 +358,7 @@ export function CreateStep2({
   const [when, setWhen] = useState('Now');
   const [cap, setCap] = useState(3);
   const [approve, setApprove] = useState(false);
-  /*
-   * Off, and seeded with your own year. Both were mock leftovers: the toggle
-   * shipped on with `["'27", "'28"]` selected, so a '29 host opened every room
-   * restricted to two years they weren't in — and `feedFor` then hid it from
-   * their own Discover feed. The room was fine, the defaults weren't.
-   *
-   * A restriction is a thing you choose, so it starts off; and choosing it can
-   * no longer exclude you, because the only year pre-selected is yours.
-   */
+  // Year restrictions are opt-in and always include the host.
   const [yearsOnly, setYearsOnly] = useState(false);
   const [years, setYears] = useState<string[]>(myYear ? [myYear] : []);
   // Built once per render rather than rescanned per chip in the year row.
