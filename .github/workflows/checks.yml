@@ -73,3 +73,9 @@ jobs:
       # of the file raises when any row came back ok = f.
       - name: Run the policy checks
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f policies.check.sql
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify concurrent room creation limits
+        run: node scripts/check-concurrency.mjs

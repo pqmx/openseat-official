@@ -309,9 +309,8 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
 };
 
 /**
- * The one way into a room, shared by the member and casual pre-join screens
- * rather than copied into each — whichever you're looking at, joining is the
- * same write and the same four things it can say.
+ * The one way into a room. Joining is one write and it has the same four things
+ * to say wherever the button appears.
  */
 const JoinButton = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
   const { c } = useTheme();
@@ -733,128 +732,6 @@ export function RoomHostRequests({ room, reload }: RoomScreenProps) {
   );
 }
 
-/**
- * Casual room before joining. Small rooms keep their pin private — the map
- * shows an approximate area until you're in.
- */
-export function RoomCasualPreJoin({ room, reload }: RoomScreenProps) {
-  const { c } = useTheme();
-  const now = useNow();
-  const host = hostOf(room);
-  return (
-    <RoomScreen
-      topBar={
-        <RoomTopBar
-          room={room}
-          center={
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <RoomStatus status={statusOf(room, now)} />
-              <StateTag label="CASUAL" />
-            </View>
-          }
-        />
-      }
-      contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 22 }}
-      footer={
-        <Footer>
-          <Text
-            style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
-            Address unlocks{'\n'}after you join
-          </Text>
-          {/* Joining is what reveals the exact pin, and now literally so: the
-              membership row is what `room_pins_select` checks, so the reload
-              comes back carrying coordinates this screen never had. */}
-          <JoinButton room={room} reload={reload} />
-        </Footer>
-      }>
-      <View>
-        <Text style={[type.displayLg, { color: c.ink }]}>{room.title}</Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-          {host.name} · {host.year}, {host.major} · {room.attendees.length} of {room.capacity} seats
-        </Text>
-      </View>
-
-      <View>
-        {/*
-          A real map, but no marker and nothing to tap. The circle is the whole
-          statement: the server sent a coordinate rounded to ~110m and nothing
-          else, so drawing anything sharper would be the screen inventing a
-          precision the database refused to give it.
-        */}
-        <View
-          style={{
-            height: 150,
-            borderRadius: radius.map,
-            borderWidth: 1,
-            borderColor: c.hair,
-            overflow: 'hidden',
-          }}>
-          <MapView
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-            region={{
-              latitude: room.approxLat,
-              longitude: room.approxLng,
-              // Wider than the member plate — a 150m circle needs room around
-              // it to read as an area rather than as a big pin.
-              latitudeDelta: 0.009,
-              longitudeDelta: 0.009,
-            }}
-            showsUserLocation={false}
-            showsMyLocationButton={false}
-            showsCompass={false}
-            toolbarEnabled={false}
-            showsPointsOfInterests={false}>
-            <Circle
-              center={{ latitude: room.approxLat, longitude: room.approxLng }}
-              radius={150}
-              strokeColor={c.dash}
-              strokeWidth={1}
-              fillColor={c.greenGlow}
-            />
-          </MapView>
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              paddingTop: 20,
-              paddingHorizontal: 14,
-              paddingBottom: 12,
-              backgroundColor: c.surface94,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 9,
-            }}>
-            <LockIcon color={c.mute2} />
-            <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.mute }}>
-              Approximate area only
-            </Text>
-          </View>
-        </View>
-        <Text
-          style={{
-            fontFamily: font.regular,
-            fontSize: 12.5,
-            lineHeight: 12.5 * 1.5,
-            color: c.mute,
-            marginTop: 10,
-          }}>
-          Small rooms keep their spot private. The exact place and address show up the moment you
-          join.
-        </Text>
-      </View>
-
-      <View>
-        <View style={{ marginBottom: 14 }}>
-          <SectionHead label="WHO'S GOING" right={`${room.attendees.length} going`} />
-        </View>
-        <Roster room={room} showOpenSeats />
-      </View>
-    </RoomScreen>
-  );
-}
 
 /** Host called it off. No push, no alert colour — you meet this on opening. */
 export function RoomCanceled({ room, rooms }: RoomScreenProps) {

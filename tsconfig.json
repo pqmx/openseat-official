@@ -11,7 +11,10 @@
   "exclude": [
     "time.check.ts",
     "data.check.ts",
-    "snap.check.ts"
+    "snap.check.ts",
+    "api.check.ts",
+    "security.check.ts",
+    "connectivity.check.ts"
   ],
   "include": [
     "**/*.ts",

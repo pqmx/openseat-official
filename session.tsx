@@ -1,30 +1,20 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import type { Session } from '@supabase/supabase-js';
 import * as Apple from 'expo-apple-authentication';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { deleteAccount as deleteAccountRow, fetchPerson } from './api';
 import type { Person } from './data';
 import { supabase } from './supabase';
 
 /**
- * Who the app is for. Identity used to be `export const you = people[0]`, which
- * a real session can't be: it is wrong before sign-in, wrong after sign-out,
- * and wrong for the second account on a shared device. Screens take a `Person`
- * now, and this is where it comes from.
+ * An error whose message was written *for* the student — the only kind a screen
+ * may show verbatim. Everything else reaching a `catch` is a provider string, a
+ * Postgres error or a network failure, none of which mean anything to them.
  */
+export class Refusal extends Error {}
 
-// Two providers, no password. Both hand back an OpenID identity token that
-// Supabase verifies against the client IDs configured for the project, so the
-// email arrives already proven — which is the whole point. The email/password
-// gate that stood here proved nothing: it created an account for anyone who
-// could type an @ucla.edu string.
-//
-// The database has not moved and is still the only enforcer.
-// `handle_new_user()` refuses any address that isn't @ucla.edu / @g.ucla.edu —
-// Apple's Hide My Email relay address included — and derives
-// `name`/`short`/`initials` from `raw_user_meta_data`, falling back to the
-// email's local part. None of the three is granted to `authenticated`, so the
-// client suggests a name and can never write one.
+// Supabase verifies provider tokens. Database triggers enforce campus email
+// membership; profile names cannot be changed through client column grants.
 
 GoogleSignin.configure({
   // Supabase verifies the token's audience, and the audience of a token minted
@@ -92,44 +82,54 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const [me, setMe] = useState<Person | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
+  const generation = useRef(0);
+  const userId = useRef<string | undefined>(undefined);
 
-  const loadPerson = useCallback(async (s: Session | null) => {
-    if (!s) {
+  const loadPerson = useCallback(async (id: string | undefined) => {
+    if (id !== userId.current) return;
+    const request = ++generation.current;
+    if (!id) {
       setMe(null);
       setError(null);
       setLoading(false);
       return;
     }
-    // Set synchronously with `setSession` at both call sites below, so React
-    // batches the two into the same render. Setting it later — e.g. from a
-    // `[session]`-keyed effect, which is one render behind — leaves a frame
-    // where `session` is already truthy but `me` hasn't been refetched yet.
-    // The gate reads that frame as "no profile row" and throws, which unmounts
-    // this provider before the fetch that would have fixed it ever resolves.
-    setLoading(true);
     try {
-      setMe((await fetchPerson(s.user.id)) ?? null);
+      const person = await fetchPerson(id);
+      if (request !== generation.current) return;
+      setMe(person ?? null);
       setError(null);
     } catch (e) {
+      if (request !== generation.current) return;
+      setMe(null);
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      loadPerson(data.session);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => {
+    // INITIAL_SESSION already supplies the stored session. A second getSession
+    // races it, and fetching inside this callback can contend on the auth lock.
+    const { data } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      loadPerson(s);
+      if (userId.current === s?.user.id) return;
+      userId.current = s?.user.id;
+      ++generation.current;
+      setMe(null);
+      setError(null);
+      setLoading(!!s);
     });
-    return () => data.subscription.unsubscribe();
-  }, [loadPerson]);
+    return () => { ++generation.current; data.subscription.unsubscribe(); };
+  }, []);
 
-  const reloadMe = useCallback(() => loadPerson(session), [loadPerson, session]);
+  const sessionUserId = session?.user.id;
+  useEffect(() => {
+    void loadPerson(sessionUserId);
+    // Token refresh changes the session object, but does not change the profile.
+  }, [sessionUserId, loadPerson]);
+
+  const reloadMe = useCallback(() => loadPerson(sessionUserId), [loadPerson, sessionUserId]);
 
   // No state to set on success in either of these: `onAuthStateChange` above is
   // already subscribed, so the session and the profile land through the same
@@ -149,11 +149,11 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const signInWithApple = useCallback(async () => {
     let credential: Apple.AppleAuthenticationCredential;
     try {
+      // EMAIL only. `FULL_NAME` was here to feed the handover below, which is
+      // gone — asking for a name we now discard is a row on Apple's sheet that
+      // buys the student nothing.
       credential = await Apple.signInAsync({
-        requestedScopes: [
-          Apple.AppleAuthenticationScope.FULL_NAME,
-          Apple.AppleAuthenticationScope.EMAIL,
-        ],
+        requestedScopes: [Apple.AppleAuthenticationScope.EMAIL],
       });
     } catch (e) {
       if ((e as { code?: string }).code === 'ERR_REQUEST_CANCELED') return;
@@ -168,7 +168,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     // which is precisely when this needs to say something useful.
     const email = emailIn(token);
     if (email && !UCLA.test(email)) {
-      throw new Error(
+      throw new Refusal(
         email.endsWith('@privaterelay.appleid.com')
           ? 'Hide My Email is on, so Apple gave us a relay address. Openseat needs your UCLA email — turn it off for Openseat, or continue with Google.'
           : `Your Apple ID uses ${email}. Openseat needs your UCLA email — continue with Google instead.`,
@@ -178,18 +178,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     const { error } = await supabase.auth.signInWithIdToken({ provider: 'apple', token });
     if (error) throw error;
 
-    // Apple's token carries no name, and the credential carries one exactly
-    // once — this authorisation, never again. `signInWithIdToken` takes no
-    // metadata, so the only way to hand it over is a second call, which the
-    // `on_auth_user_meta_updated` trigger turns into the three name columns.
-    // It writes them only while they're still the email's local part, so a
-    // later sign-in can't rewrite a name a roster has already shown.
-    const full = [credential.fullName?.givenName, credential.fullName?.familyName]
-      .filter(Boolean)
-      .join(' ');
-    // USER_UPDATED comes back through `onAuthStateChange`, so the profile
-    // refetches itself — no `reloadMe()` here.
-    if (full) await supabase.auth.updateUser({ data: { full_name: full } });
   }, []);
 
   const signOut = useCallback(async () => {
@@ -197,7 +185,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     // Google" silently signs the same person back in and the chooser never
     // appears — wrong on any shared device.
     await GoogleSignin.signOut().catch(() => {});
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setMe(null);
   }, []);
 

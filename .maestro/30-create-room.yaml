@@ -1,0 +1,35 @@
+appId: com.pqmx.openseat
+name: Create and end a room
+tags:
+  - write
+---
+# Runs against the configured E2E Supabase project and Google Places function.
+# The room is ended at the end so repeated runs do not leave active test data.
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Discover"
+    timeout: 20000
+- tapOn: "New"
+- tapOn:
+    id: "create-title"
+- inputText: "Maestro smoke room"
+- tapOn:
+    id: "create-location"
+- inputText: "Powell Library UCLA"
+- extendedWaitUntil:
+    visible: "Powell Library.*"
+    timeout: 15000
+- tapOn: "Powell Library.*"
+- tapOn: "Next: when & who"
+- assertVisible: "STEP 2 / 2"
+- assertVisible: "Maestro smoke room"
+- tapOn: "Open the room"
+- extendedWaitUntil:
+    visible: "Maestro smoke room"
+    timeout: 20000
+- assertVisible: "YOU'RE HOSTING"
+- tapOn: "End room"
+- extendedWaitUntil:
+    visible: "This room is closed for good"
+    timeout: 20000

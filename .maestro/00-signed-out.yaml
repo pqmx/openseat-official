@@ -1,0 +1,13 @@
+appId: com.pqmx.openseat
+name: Signed-out launch
+tags:
+  - signed-out
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Somewhere to be,.*"
+    timeout: 15000
+- assertVisible: "Continue with Google"
+- assertVisible: "UCLA accounts only.*"
+

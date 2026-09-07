@@ -174,6 +174,10 @@ begin
        format($q$insert into public.room_updates(room_id,author_id,body) values (%L,%L,'not me')$q$, ra, mo), false),
       ('cannot post to a canceled room', null, ivy,
        format($q$insert into public.room_updates(room_id,author_id,body) values (%L,%L,'still on?')$q$, rg, ivy), false),
+      ('room updates are rate limited at the table boundary',
+       format($q$insert into public.room_updates(room_id,author_id,body)
+         select %L,%L,'Update' from generate_series(1,120)$q$, ra, hana), hana,
+       format($q$insert into public.room_updates(room_id,author_id,body) values (%L,%L,'Again')$q$, ra, hana), false),
 
       -- Ending a room, and the column grants behind it
       ('host ends their room', null, hana,
@@ -199,11 +203,31 @@ begin
        format($q$update public.profiles set interests=array['a','b','c','d','e','f','g'] where id=%L$q$, mo), false),
       ('cannot store an oversized prompt blob', null, mo,
        format($q$update public.profiles set prompts=jsonb_build_array(jsonb_build_object('q','MY IDEAL FRIDAY IS','a',repeat('x',900))) where id=%L$q$, mo), false),
+      ('cannot store objects as prompt text', null, mo,
+       format($q$update public.profiles set prompts='[{"q":"Hello","a":{"bad":true}}]'::jsonb where id=%L$q$, mo), false),
+      ('cannot store null prompt entries', null, mo,
+       format($q$update public.profiles set prompts='[null]'::jsonb where id=%L$q$, mo), false),
+      ('cannot store a prompt without an answer', null, mo,
+       format($q$update public.profiles set prompts='[{"q":"Hello"}]'::jsonb where id=%L$q$, mo), false),
+      ('cannot store an unbounded major', null, mo,
+       format($q$update public.profiles set major=repeat('x',121) where id=%L$q$, mo), false),
+      ('cannot store an unbounded year', null, mo,
+       format($q$update public.profiles set year=repeat('x',9) where id=%L$q$, mo), false),
 
       -- Reports, and the blocking they can carry. These two read a row rather
       -- than write one: "allowed" means the room came back.
       ('file a report', null, mo,
        format($q$insert into public.reports(reporter_id,profile_id,reason,blocked) values (%L,%L,'Spam or scam',true)$q$, mo, ivy), true),
+      ('reports are rate limited at the table boundary',
+       format($q$insert into public.reports(reporter_id,profile_id,reason)
+         select %L,%L,'Spam' from generate_series(1,20)$q$, mo, ivy), mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason) values (%L,%L,'Again')$q$, mo, ivy), false),
+      ('bulk reports cannot bypass the rate limit', null, mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason)
+         select %L,%L,'Spam' from generate_series(1,21)$q$, mo, ivy), false),
+      ('bulk reports within the allowance succeed', null, mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason)
+         select %L,%L,'Spam' from generate_series(1,20)$q$, mo, ivy), true),
       ('cannot file a report as somebody else', null, mo,
        format($q$insert into public.reports(reporter_id,profile_id,reason) values (%L,%L,'Spam or scam')$q$, ash, ivy), false),
       -- `reviewed_at` is triage's column, and `private.report_queue` is the
@@ -256,6 +280,29 @@ begin
        format($q$insert into public.rooms(id,title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
                values (gen_random_uuid(),'Study','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44)$q$, mo), false),
 
+      -- The cap below lives inside `create_room`, so it is only a cap if
+      -- `create_room` is the only way in. It wasn't: `rooms_insert_own` asked
+      -- for `host_id = auth.uid()` and the nine column grants supplied the rest,
+      -- so a client could open unlimited rooms by never calling the function —
+      -- each one with no pin and nobody in it. The grant is gone; this is what
+      -- says so, and it is a room the student is perfectly entitled to host.
+      ('cannot open a room without going through create_room', null, mo,
+       format($q$insert into public.rooms(title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
+               values ('Study','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44)$q$, mo), false),
+      -- Same for the pin, which was the other half of the half-built room.
+      ('cannot write a pin directly either', null, mo,
+       format($q$insert into public.room_pins(room_id,lat,lng)
+               select id,34.07,-118.44 from public.rooms where host_id = %L limit 1$q$, mo), false),
+
+      -- A block is one fact, so filing it twice is the same fact. Without the
+      -- partial unique index, `reports` had no uniqueness anywhere and a loop
+      -- could flood both the table and the triage queue.
+      ('cannot block the same person twice',
+       format($q$insert into public.reports(reporter_id,profile_id,reason,blocked)
+               values (%L,%L,'Made me uncomfortable',true)$q$, mo, ash), mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason,blocked)
+               values (%L,%L,'Made me uncomfortable',true)$q$, mo, ash), false),
+
       -- The `create_room` cap. `setup` seeds rooms as the script's own role so
       -- the counter is already primed when the student calls the function.
       ('opening a room is allowed under the cap',
@@ -265,7 +312,23 @@ begin
       ('cannot open a sixth room in an hour',
        format($q$insert into public.rooms(title,place,host_id,starts_at,capacity,access,approx_lat,approx_lng)
                select 'Seeded','Powell',%L,now()+interval '1 hour',4,'open',34.07,-118.44 from generate_series(1,5)$q$, mo), mo,
-       $q$select public.create_room('Study','Powell',now()+interval '1 hour',4,'open',null,34.07,-118.44)$q$, false)
+       $q$select public.create_room('Study','Powell',now()+interval '1 hour',4,'open',null,34.07,-118.44)$q$, false),
+      ('cannot open a room two years in the future', null, mo,
+       $q$select public.create_room('Study','Powell',now()+interval '2 years',4,'open',null,34.07,-118.44)$q$, false),
+      ('cannot open a room in the distant past', null, mo,
+       $q$select public.create_room('Study','Powell',now()-interval '2 days',4,'open',null,34.07,-118.44)$q$, false),
+      ('cannot edit a tombstone with a deleted account token',
+       format('delete from auth.users where id=%L', mo), mo,
+       format('update public.profiles set major=''Reactivated'' where id=%L', mo), false),
+      ('deleted account token cannot read rooms',
+       format('delete from auth.users where id=%L', mo), mo,
+       'select 1 from public.rooms', false),
+      ('deleted account token cannot create a room',
+       format('delete from auth.users where id=%L', mo), mo,
+       $q$select public.create_room('Study','Powell',now(),4,'open',null,34.07,-118.44)$q$, false),
+      ('deleted account token cannot file reports',
+       format('delete from auth.users where id=%L', mo), mo,
+       format($q$insert into public.reports(reporter_id,profile_id,reason) values (%L,%L,'Spam')$q$, mo, ivy), false)
 
       -- There were six cases here for `private.can_see_topic`, the `using`
       -- clause of the realtime topic policy. Realtime is out of the MVP and
@@ -298,6 +361,26 @@ begin
   end loop;
 end $$;
 
+-- The RPC is callable without the app, so its normalization is tested at the
+-- database boundary rather than relying only on the disabled host-year chip.
+do $$
+declare
+  orig text := session_user;
+  hana constant text := '11111111-1111-4111-8111-000000000001';
+  opened uuid;
+  got text[];
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', hana)::text, true);
+  opened := public.create_room(
+    'Other years', 'Powell', now() + interval '1 hour', 4, 'open', array['''29'], 34.07, -118.44);
+  select years into got from public.rooms where id = opened;
+  perform set_config('role', orig, true);
+  insert into check_result values (
+    'a host cannot exclude their own year',
+    got = array['''29', '''27'], got::text, '{''29,''27}', null);
+end $$;
+
 -- ------------------------------------------------- the signup trigger --
 
 -- Not policies. `handle_new_user()` is a trigger on `auth.users`, and both
@@ -321,22 +404,50 @@ begin
   insert into check_result values (
     'a signup with no name falls back to the email', got = 'mjimenez', got, 'mjimenez', null);
 
-  -- The first authorisation's name, handed over afterwards by `updateUser`.
+  -- This used to be the Apple backfill: `updateUser` wrote `full_name` and
+  -- `on_auth_user_meta_updated` turned it into the three name columns, guarded
+  -- by "only while the name is still the email's local part". But that guard
+  -- lets it through exactly once, and an Apple account starts in exactly that
+  -- state — so one client call set the roster name to any string it liked.
+  --
+  -- The trigger is dropped. `raw_user_meta_data` is a field the client writes,
+  -- so this asserts the inverse of what it used to: writing it changes nothing.
   update auth.users set raw_user_meta_data = '{"full_name":"Maya Jimenez"}'::jsonb
    where id = apple;
   select name || ' / ' || short || ' / ' || initials into got
     from public.profiles where id = apple;
   insert into check_result values (
-    'apple hands its name over on the next update',
-    got = 'Maya J / Maya / MJ', got, 'Maya J / Maya / MJ', null);
+    'the client cannot name itself through user metadata',
+    got = 'mjimenez / mjimenez / M', got, 'mjimenez / mjimenez / M', null);
 
-  -- And never again. A name a roster has already shown is not the client's to
-  -- edit, which is the whole reason the upsert carries a `where`.
+  -- And the impersonation the guard used to permit, spelled out: a second
+  -- account cannot take a name the first one is already shown under.
   update auth.users set raw_user_meta_data = '{"full_name":"Hana Okafor"}'::jsonb
    where id = apple;
   select name into got from public.profiles where id = apple;
   insert into check_result values (
-    'a settled name cannot be rewritten later', got = 'Maya J', got, 'Maya J', null);
+    'a name stays the provider''s, however often metadata changes',
+    got = 'mjimenez', got, 'mjimenez', null);
+end $$;
+
+-- The three name columns are bounded now. Every other free-text column on this
+-- schema is, and these are the ones on every roster row: a provider sending a
+-- long name must be clamped, not allowed through and not allowed to fail the
+-- signup either.
+do $$
+declare
+  long constant uuid := '11111111-1111-4111-8111-000000000008';
+  got  record;
+begin
+  insert into auth.users (id, email, raw_user_meta_data)
+  values (long, 'longname@ucla.edu',
+          jsonb_build_object('full_name', repeat('a', 300) || ' ' || repeat('b', 300)));
+  select name, short, initials into got from public.profiles where id = long;
+  insert into check_result values (
+    'a very long provider name is clamped, not refused',
+    length(got.name) <= 40 and length(got.short) <= 20 and length(got.initials) <= 4,
+    format('%s/%s/%s', length(got.name), length(got.short), length(got.initials)),
+    '<=40/<=20/<=4', null);
 end $$;
 
 do $$
@@ -351,7 +462,8 @@ begin
       -- Hide My Email is the likely Apple refusal, not the odd one: the relay
       -- address is what the app warns about before it ever sends the token.
       ('apple''s Hide My Email relay is refused too', 'x9k2h@privaterelay.appleid.com'),
-      ('a lookalike domain is refused', 'maya@ucla.edu.example.com')
+      ('a lookalike domain is refused', 'maya@ucla.edu.example.com'),
+      ('a missing email is refused', null)
     ) as v(name, email)
   loop
     begin
@@ -470,6 +582,41 @@ begin
     'the tombstone is still readable, so the room can render', n = 1, n::text, '1', null);
 end $$;
 
+-- Exercise the counter values, not merely whether the RPC returned a row.
+do $$
+declare
+  orig text := session_user;
+  who uuid := '11111111-1111-4111-8111-000000000002';
+  lookup_ok boolean;
+  autocomplete_ok boolean;
+  lookup_denied boolean;
+  autocomplete_denied boolean;
+begin
+  insert into private.place_lookups(profile_id, day, n, autocomplete_n)
+  values (who, current_date, 59, 299);
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', who)::text, true);
+  lookup_ok := public.spend_place_lookup();
+  autocomplete_ok := public.spend_place_autocomplete();
+  lookup_denied := not public.spend_place_lookup();
+  autocomplete_denied := not public.spend_place_autocomplete();
+  perform set_config('role', orig, true);
+  insert into check_result values
+    ('last Places detail allowance is usable', lookup_ok, lookup_ok::text, 'true', null),
+    ('last autocomplete allowance is usable', autocomplete_ok, autocomplete_ok::text, 'true', null),
+    ('Places details stop at 60 per day', lookup_denied, lookup_denied::text, 'true', null),
+    ('autocomplete stops at 300 per day', autocomplete_denied, autocomplete_denied::text, 'true', null);
+  delete from auth.users where id = who;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', who)::text, true);
+  lookup_denied := not public.spend_place_lookup();
+  autocomplete_denied := not public.spend_place_autocomplete();
+  perform set_config('role', orig, true);
+  insert into check_result values
+    ('deleted accounts cannot spend Places quota', lookup_denied and autocomplete_denied,
+     (lookup_denied and autocomplete_denied)::text, 'true', null);
+end $$;
+
 select test, ok, got, expected, detail from check_result order by ok, test;
 
 -- The table above is for reading; this is for exit codes. Run under
@@ -481,7 +628,7 @@ declare
   bad int;
   all_of int;
 begin
-  select count(*) filter (where not ok), count(*) into bad, all_of from check_result;
+  select count(*) filter (where ok is not true), count(*) into bad, all_of from check_result;
   if bad > 0 then
     raise exception '% of % policy checks failed', bad, all_of;
   end if;

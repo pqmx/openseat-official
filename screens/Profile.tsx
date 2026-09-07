@@ -469,6 +469,7 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
             unambiguously yours.
           */}
           <Pressable
+            testID="account-options"
             accessibilityRole="button"
             accessibilityLabel="Account options"
             onPress={openAccountMenu}

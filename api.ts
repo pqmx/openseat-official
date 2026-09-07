@@ -1,20 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 import type { Access, Draft, Person, Room, Tone, Update } from './data';
+import { ROOM_REFRESH_MS } from './refresh';
+import { createRoomCache } from './room-cache';
 import { supabase } from './supabase';
 
-/**
- * The seam CLAUDE.md always pointed at. Everything here turns Supabase rows
- * into the shapes `data.ts` derives labels from — snake_case to camelCase,
- * timestamps to `Date`, and the two membership states back into the
- * `attendees` / `requests` split the screens already read.
- *
- * No filtering happens here that the database isn't already doing. Year
- * visibility and casual-room coordinates are RLS policies; if a row arrives,
- * you were allowed to see it.
- */
+/** Convert Supabase rows to app data. Database policies enforce access. */
 
 const personCols = 'id, name, short, initials, year, major, tone, interests, prompts';
+
+/**
+ * The same person, as much of them as a roster row draws — and no more.
+ *
+ * `fetchRooms` embeds a profile for the host, every member and every update's
+ * author, so whatever is listed here is handed over for most of the user base
+ * in a single request. `interests` and `prompts` are free text somebody wrote
+ * about themselves and nothing outside `screens/Profile` renders them, so they
+ * are not the feed's to carry. The profile route fetches the full row through
+ * `fetchPerson` when somebody actually taps through.
+ *
+ * `year` and `major` stay: `Room` and the feed card both print them.
+ */
+const rosterCols = 'id, name, short, initials, year, major, tone';
 
 // PostgREST returns an embedded one-to-one as an object, but a to-many as an
 // array, and the shape depends on how it reads the constraint. Take either.
@@ -30,7 +39,9 @@ const toPerson = (r: any): Person => ({
   major: r.major ?? '',
   tone: r.tone ?? undefined,
   interests: r.interests?.length ? r.interests : undefined,
-  prompts: r.prompts?.length ? r.prompts : undefined,
+  prompts: Array.isArray(r.prompts)
+    ? r.prompts.filter((p: any) => p && typeof p.q === 'string' && typeof p.a === 'string')
+    : undefined,
 });
 
 const toUpdate = (r: any): Update => ({
@@ -42,12 +53,12 @@ const toUpdate = (r: any): Update => ({
 
 const roomCols = `
   id, title, place, starts_at, canceled_at, capacity,
-  access, casual, years, approx_lat, approx_lng,
-  host:profiles!rooms_host_id_fkey(${personCols}),
+  access, years, approx_lat, approx_lng,
+  host:profiles!rooms_host_id_fkey(${rosterCols}),
   pin:room_pins(lat, lng),
-  members:room_members(state, profile:profiles!room_members_profile_id_fkey(${personCols})),
+  members:room_members(state, profile:profiles!room_members_profile_id_fkey(${rosterCols})),
   updates:room_updates(id, body, created_at,
-    author:profiles!room_updates_author_id_fkey(${personCols}))
+    author:profiles!room_updates_author_id_fkey(${rosterCols}))
 `;
 
 const toRoom = (r: any): Room => {
@@ -64,7 +75,8 @@ const toRoom = (r: any): Room => {
     place: r.place,
     approxLat: r.approx_lat,
     approxLng: r.approx_lng,
-    // Absent for a casual room you haven't joined — the server withheld it.
+    // Absent when the server withheld the pin, which `showsExactPin` is the
+    // only permitted way to ask about.
     lat: pin?.lat ?? undefined,
     lng: pin?.lng ?? undefined,
     host: toPerson(r.host),
@@ -72,7 +84,6 @@ const toRoom = (r: any): Room => {
     canceledAt: r.canceled_at ? new Date(r.canceled_at) : undefined,
     capacity: r.capacity,
     access: r.access,
-    casual: r.casual ?? false,
     years: r.years ?? undefined,
     attendees: named('member'),
     requests: named('requested'),
@@ -81,8 +92,30 @@ const toRoom = (r: any): Room => {
   };
 };
 
+/**
+ * Every room the signed-in student may see, up to a ceiling.
+ *
+ * The ceiling is the point. This is one request that fans out to a profile per
+ * host, per member and per update author, and every one of those rows re-runs
+ * `profiles_select` -> `shares_room` -> `can_see_room`, which is three
+ * subqueries each. Unbounded, the cost grows with rooms x members and a signed-in
+ * caller can hold it in a loop; `room_updates` in particular had no bound at all,
+ * so a host posting in a loop grew every feed response for everyone.
+ *
+ * ponytail: two fixed ceilings, not pagination. The feed is "what's on today" and
+ * has never had a second page; if it ever needs one, this becomes a cursor on
+ * `starts_at` and the ceilings stay as the page size.
+ */
 export const fetchRooms = async (): Promise<Room[]> => {
-  const { data, error } = await supabase.from('rooms').select(roomCols);
+  const { data, error } = await supabase
+    .from('rooms')
+    .select(roomCols)
+    .order('starts_at', { ascending: true })
+    .limit(200)
+    // Newest first so the ceiling keeps the updates that matter — every screen
+    // reads `updates[0]`, and the room screen shows the recent few.
+    .order('created_at', { referencedTable: 'updates', ascending: false })
+    .limit(20, { referencedTable: 'updates' });
   if (error) throw error;
   return (data ?? []).map(toRoom);
 };
@@ -122,26 +155,11 @@ export const saveProfile = async (
     'Could not save your profile.',
   );
 
-/**
- * The last feed anyone fetched. Three routes call `useRooms` and none of them
- * share state, so without this, tapping a room from the feed blanks the screen
- * and refetches every room's roster to draw a room the feed already had.
- *
- * It is a snapshot, not a cache with rules: whoever mounts next paints from it
- * and revalidates behind. It is cleared on any change of signed-in user, because
- * RLS decided these rows for *that* session and none of them are the next one's
- * to see.
- *
- * ponytail: one module-level array. A real query cache (TanStack Query) is the
- * upgrade if per-room keys or selective invalidation ever matter.
- */
-let cached: Room[] = [];
-let cachedFor: string | undefined;
+/** Share feed reads across screens; discard the snapshot on account changes. */
+const roomCache = createRoomCache(fetchRooms);
 
 supabase.auth.onAuthStateChange((_e, s) => {
-  if (s?.user.id === cachedFor) return;
-  cached = [];
-  cachedFor = s?.user.id;
+  roomCache.reset(s?.user.id);
 });
 
 /**
@@ -149,7 +167,7 @@ supabase.auth.onAuthStateChange((_e, s) => {
  * so there is no "visible to me" filter to get wrong on the client.
  */
 export const useRooms = () => {
-  const [rooms, setRooms] = useState<Room[]>(cached);
+  const [rooms, setRooms] = useState<Room[]>(roomCache.rooms);
   const [error, setError] = useState<Error>();
   // Two questions, and one boolean answered both wrong.
   //
@@ -160,43 +178,54 @@ export const useRooms = () => {
   // `settled` is "this mount has heard back". Only that tells a dead link from
   // a room not fetched yet: the room you just created is missing from the cache
   // for one paint, and `roomById` can't tell that from a bad id on its own.
-  const [loading, setLoading] = useState(!cached.length);
+  const [loading, setLoading] = useState(!roomCache.rooms.length);
   const [settled, setSettled] = useState(false);
+  const requestVersion = useRef(0);
 
   const reload = useCallback(() => {
-    return fetchRooms()
+    const version = ++requestVersion.current;
+    return roomCache.read()
       .then((r) => {
-        cached = r;
+        if (!r || version !== requestVersion.current) return;
         setRooms(r);
         setError(undefined);
       })
-      .catch(setError)
+      .catch((error) => { if (version === requestVersion.current) setError(error); })
       .finally(() => {
+        if (version !== requestVersion.current) return;
         setLoading(false);
         setSettled(true);
       });
   }, []);
 
   useEffect(() => {
-    reload();
+    let userId = roomCache.userId;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (userId === session?.user.id) return;
+      userId = session?.user.id;
+      ++requestVersion.current;
+      clearTimeout(timer);
+      setRooms([]);
+      setError(undefined);
+      setSettled(false);
+      setLoading(!!userId);
+      if (userId) timer = setTimeout(() => void reload(), 0);
+    });
+    return () => { ++requestVersion.current; clearTimeout(timer); data.subscription.unsubscribe(); };
   }, [reload]);
 
-  /*
-   * Re-read on foreground. This is the reconciliation the socket can't do for
-   * itself: a mobile WebSocket drops while backgrounded and reconnects without
-   * replaying what it missed, so coming back to the app is exactly the moment
-   * the roster in memory is most likely to be wrong. Same reasoning as the auth
-   * refresh in `supabase.ts`, which is tied to foreground for the same reason.
-   *
-   * It lives here rather than beside the channel so all three routes that call
-   * `useRooms` get it, including the two with no realtime subscription at all.
-   */
-  useEffect(() => {
+  // Hidden tabs stay mounted. Only the focused screen needs a polling timer.
+  useFocusEffect(useCallback(() => {
+    void reload();
+    const id = setInterval(() => {
+      if (AppState.currentState === 'active') void reload();
+    }, ROOM_REFRESH_MS);
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') void reload();
     });
-    return () => sub.remove();
-  }, [reload]);
+    return () => { clearInterval(id); sub.remove(); };
+  }, [reload]));
 
   return { rooms, loading, settled, error, reload };
 };
@@ -206,7 +235,7 @@ export const useRooms = () => {
  *
  * A clock, not a fetch: this moves `now` forward so the derived labels recompute
  * from rooms already in memory. A room somebody else opened still won't appear
- * until `useRooms` reloads, which only happens on mount and after a write.
+ * until the focused screen's next refresh.
  */
 export const useNow = (everyMs = 10_000) => {
   const [now, setNow] = useState(() => new Date());
@@ -237,10 +266,8 @@ export type PlaceHit = { title: string; sub: string; lat: number; lng: number };
  * server, so the function is that proxy. It holds the key and checks your
  * session before spending it.
  *
- * Searching is two calls because the billing is: every `searchPlaces` in one
- * `session` is free, and `resolvePlace` is the single charge that ends it. Pass
- * the same token to both or Google bills each keystroke separately, and start a
- * fresh one per search — see `newSession` in `screens/Create.tsx`.
+ * Pass the same token through autocomplete and the final details lookup.
+ * Both can be billed; the server limits both, including abandoned sessions.
  */
 export const searchPlaces = async (
   query: string,
@@ -272,8 +299,8 @@ export const resolvePlace = async (
 /**
  * Creates the room, its pin and the host's own membership in one transaction.
  * Three inserts from the client could half-succeed and leave a room nobody is
- * in, so it is a single `security invoker` function instead — the insert policies
- * still authorise every row it writes.
+ * in. The privileged RPC checks the caller and rate limit; direct inserts are
+ * revoked so callers cannot bypass those checks.
  */
 export const createRoom = async (draft: Draft, lat: number, lng: number): Promise<string> => {
   const { data, error } = await supabase.rpc('create_room', {
@@ -435,6 +462,16 @@ export const deleteAccount = async () => {
 };
 
 /**
+ * The two feelings a write has. Fire-and-forget on purpose: hardware without a
+ * Taptic Engine rejects, and a statement the database already accepted must not
+ * fail on the buzz that follows it.
+ */
+export const tapOk = () =>
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+export const tapFail = () =>
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+
+/**
  * One in-flight write at a time, and a sentence when it fails. Without this each
  * of the seven buttons would need its own try/catch, and a double tap would send
  * the statement twice. Handlers can't reach the router's ErrorBoundary — nothing
@@ -448,9 +485,13 @@ export const useWrite = () => {
       setBusy(true);
       try {
         await fn();
+        tapOk();
         return true;
-      } catch (e) {
-        Alert.alert("That didn't work", e instanceof Error ? e.message : String(e));
+      } catch {
+        // Most failures here are a policy refusing a write, and its message is
+        // a Postgres string. "Try again" is the honest version of that.
+        tapFail();
+        Alert.alert("That didn't work", 'Try again in a moment.');
         return false;
       } finally {
         setBusy(false);

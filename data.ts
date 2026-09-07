@@ -50,9 +50,9 @@ export type Room = {
   approxLat: number;
   approxLng: number;
   /**
-   * Exactly where, WGS84 — or absent, because the server withheld it. A casual
-   * room's exact coordinates live in `room_pins` behind their own RLS policy,
-   * so a non-member simply receives no row. That is why these are optional:
+   * Exactly where, WGS84 — or absent, because the server withheld it. Exact
+   * coordinates live in `room_pins` behind their own RLS policy, so a viewer the
+   * policy refuses simply receives no row. That is why these are optional:
    * undefined is the server saying no, not data we forgot to load.
    */
   lat?: number;
@@ -62,8 +62,6 @@ export type Room = {
   canceledAt?: Date;
   capacity: number;
   access: Access;
-  /** Casual rooms keep their pin private until you join; the design's rule. */
-  casual?: boolean;
   /** Class years that can see the room at all. Undefined means everyone. */
   years?: string[];
   /** Everyone in, host included — the host holds a membership row too. */
@@ -102,8 +100,10 @@ export const hasAsked = (room: Room, person: Person) =>
 
 /**
  * Whether the map may drop a pin. This used to re-derive the rule client-side
- * from `casual` and the roster — which only worked because nothing could query
- * around it. Now the server decides: coordinates arrive or they don't.
+ * from a `casual` flag and the roster — which only worked because nothing could
+ * query around it, and which turned out to be protecting nothing: the flag had
+ * no grant that could set it. Now the server decides, and only the server:
+ * coordinates arrive or they don't.
  *
  * A type predicate, so the pin branch gets `lat`/`lng` as plain numbers and
  * there is no way to read them without having checked.
@@ -187,22 +187,24 @@ export const metaOf = (room: Room, now: Date) =>
       : `${room.attendees.length} of ${room.capacity} seats`,
   ].join(' · ');
 
-/** The five ways `/room/[id]` can draw itself. */
-export type RoomView = 'member' | 'host' | 'requests' | 'casual' | 'canceled';
+/** The four ways `/room/[id]` can draw itself. */
+export type RoomView = 'member' | 'host' | 'requests' | 'canceled';
 
 /**
- * Which of the five a room opens as. The design draws five screens and the
- * difference is entirely who you are to the room, so decide it in one place.
- * This is now the only thing that decides: the `?view=` override the route used
- * to accept is gone, because joining and ending a room are real writes and the
- * refetch already changes who you are to the room.
+ * Which of the four a room opens as. The design draws them and the difference is
+ * entirely who you are to the room, so decide it in one place. This is the only
+ * thing that decides: the `?view=` override the route used to accept is gone,
+ * because joining and ending a room are real writes and the refetch already
+ * changes who you are to the room.
+ *
+ * There was a fifth, `casual` — the pre-join screen for a room that withheld its
+ * exact pin. Nothing could ever mark a room casual, so it was never reachable;
+ * the column and its policy clause went with it.
  */
 export const viewOf = (room: Room, me: Person): RoomView => {
   if (room.canceledAt) return 'canceled';
   if (isHost(room, me)) return room.access === 'approve' ? 'requests' : 'host';
-  if (isIn(room, me)) return 'member';
-  // Casual rooms hide their pin until you're in, so non-members get that view.
-  return room.casual ? 'casual' : 'member';
+  return 'member';
 };
 
 /**
@@ -211,6 +213,12 @@ export const viewOf = (room: Room, me: Person): RoomView => {
  * can't set would be a room nobody could see.
  */
 export const classYears = ["'27", "'28", "'29", 'Grad'];
+
+/** A host may narrow the audience, but never hide their own room from themself. */
+export const yearsForHost = (years: string[] | undefined, hostYear: string | undefined) => {
+  if (!years || !hostYear || years.includes(hostYear)) return years;
+  return [...years, hostYear];
+};
 
 /**
  * The tags a profile can carry — and the only ones it can. The picker offers

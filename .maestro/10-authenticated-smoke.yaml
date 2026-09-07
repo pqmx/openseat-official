@@ -1,0 +1,31 @@
+appId: com.pqmx.openseat
+name: Authenticated navigation and account controls
+tags:
+  - smoke
+---
+# This suite deliberately preserves Keychain/app state. Sign in once with the
+# dedicated E2E account before running it; see .maestro/README.md.
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Discover"
+    timeout: 20000
+- assertVisible: "Rooms"
+- assertVisible: "New"
+- assertVisible: "You"
+- tapOn: "Rooms"
+- assertVisible: "Your rooms"
+- tapOn: "You"
+- assertVisible: "Verified Bruin"
+- tapOn:
+    id: "account-options"
+- assertVisible: "Account"
+- assertVisible: "Delete account"
+- assertVisible: "Sign out"
+- tapOn: "Cancel"
+- tapOn: "New"
+- assertVisible: "Open a seat.*"
+- assertVisible: "STEP 1 / 2"
+- tapOn: "Cancel"
+- assertVisible: "You"
+

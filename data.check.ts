@@ -15,6 +15,7 @@ import {
   showsExactPin,
   viewOf,
   withAnswer,
+  yearsForHost,
   type Person,
   type Room,
 } from './data.ts';
@@ -56,16 +57,17 @@ const room = (over: Partial<Room> = {}): Room => ({
   ...over,
 });
 
-/** `viewOf` decides which of the five drawings `/room/[id]` renders. */
+/** `viewOf` decides which of the four drawings `/room/[id]` renders. */
 assert.equal(viewOf(room({ canceledAt: new Date() }), me), 'canceled');
 // Canceled wins even over hosting — the room is gone for everyone.
 assert.equal(viewOf(room({ canceledAt: new Date(), host: me }), me), 'canceled');
 assert.equal(viewOf(room({ host: me, access: 'approve' }), me), 'requests');
 assert.equal(viewOf(room({ host: me, access: 'open' }), me), 'host');
 assert.equal(viewOf(room({ attendees: [me] }), me), 'member');
-// In the room already? You see the pin, casual or not.
-assert.equal(viewOf(room({ attendees: [me], casual: true }), me), 'member');
-assert.equal(viewOf(room({ casual: true }), me), 'casual');
+// There was a fifth view, `casual`, for a room withholding its exact pin. No
+// grant could ever mark a room casual, so it was never reachable; the column and
+// its policy clause are gone. Everyone who isn't the host reads as a member now,
+// and the pin's absence is the map's business, not the route's.
 assert.equal(viewOf(room(), me), 'member');
 
 // The same room reads differently for two people. This is what a module-level
@@ -86,14 +88,14 @@ assert.equal(roomById(all, 'b')?.id, 'b');
 assert.equal(hostOf(room({ host: other })).id, 'other');
 
 /*
- * The pin is now whatever the server sent. `room_pins` has its own RLS policy,
- * so a casual room you haven't joined arrives with no coordinates at all —
- * these assert the client reads that absence rather than re-deriving the rule
- * from `casual`, which is what let the map contradict the database before.
+ * The pin is whatever the server sent, and nothing else. `room_pins` has its own
+ * RLS policy, so a viewer it refuses receives no coordinates at all — these
+ * assert the client reads that absence rather than re-deriving the rule from a
+ * flag, which is what let the map contradict the database before.
  */
-assert.equal(showsExactPin(room({ casual: true, lat: undefined, lng: undefined })), false);
-assert.equal(showsExactPin(room({ casual: true })), true, 'a joined casual room has its pin');
-assert.equal(showsExactPin(room({ casual: false })), true);
+assert.equal(showsExactPin(room({ lat: undefined, lng: undefined })), false);
+assert.equal(showsExactPin(room({ lat: 34.07, lng: undefined })), false, 'half a pin is no pin');
+assert.equal(showsExactPin(room()), true);
 // Coarse coordinates always survive, so the map can still draw the circle.
 assert.equal(room({ lat: undefined, lng: undefined }).approxLat, 34.07);
 
@@ -205,5 +207,11 @@ assert.deepEqual(
 // and the size but can't check membership — so it has to be free of duplicates.
 assert.equal(new Set(interestTags).size, interestTags.length);
 assert.ok(interestTags.length > maxInterests, 'a vocabulary you can pick all of is not a choice');
+
+// Restricting a room can never lock its host out. The database repeats this
+// normalization because callers outside this app can invoke create_room too.
+assert.deepEqual(yearsForHost(["'29"], "'27"), ["'29", "'27"]);
+assert.deepEqual(yearsForHost(["'27", "'29"], "'27"), ["'27", "'29"]);
+assert.equal(yearsForHost(undefined, "'27"), undefined, 'no restriction stays open to everyone');
 
 console.log('data.ts ok');

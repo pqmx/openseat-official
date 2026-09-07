@@ -1,208 +1,109 @@
-# Security review — 2026-08-01
+# Security review — September 5, 2026
 
-Scope: secret handling, the client bundle, and the RLS surface that actually enforces the
-rules (`AGENTS.md` says the database is the enforcement, so that's where the bugs were).
+Audited the current working tree and the deployed Supabase project
+`openseat-app` (`odewffansajnakyeyzvu`). This replaces the outdated August review.
+Existing unrelated working-tree edits were preserved.
 
-Everything below marked **fixed** is applied to `openseat-app` (`odewffansajnakyeyzvu`) as
-three migrations: `tighten_profile_and_member_visibility`,
-`bound_free_text_and_coordinates`, `fix_rooms_select_returning_snapshot`.
+## Fixed and deployed
 
-## Clean
+- **Deleted-account tokens retained access.** Profiles intentionally survive account
+  deletion, but policies previously trusted only the JWT subject. A deleted account
+  could still read rooms and edit its tombstone until its token expired.
+  Restrictive policies now require a matching `auth.users` row on all six public
+  tables. Privileged room creation, block-list reads and Places counters check
+  that account too. This addresses deletion, not immediate revocation of every
+  access token after ordinary sign-out.
+- **Room creation regressed in local migrations.** The host-year migration replaced
+  the privileged function with an invoker and removed its time bounds. Replaying
+  the original chain failed the policy suite with permission denied. Restored
+  the privilege mode, retained the host-year rule, and restored time validation.
+- **Concurrent requests bypassed the room creation limit.** Creation now locks
+  the caller's auth row while checking its five-per-hour allowance.
+- **Repeated content writes were unbounded.** Database triggers now enforce
+  20 reports and 120 room updates per account per hour, including direct and bulk
+  inserts. These serialize against the same account row as room creation.
+- **Autocomplete could spend unlimited Google quota.** Both paths are now counted:
+  300 autocomplete requests and 60 details requests per account per database day.
+  The counter denies requests after the allowance without incrementing forever.
+  Autocomplete sessions are not universally free; abandoned sessions are billed
+  per request. See [Google's session pricing](https://developers.google.com/maps/documentation/places/web-service/session-pricing).
+- **Malformed Places requests and upstream failures.** The deployed handler checks
+  authentication, method, body size, JSON shape and parameters before spending
+  quota; requires an explicit quota approval; bounds Google calls to eight seconds;
+  and returns generic failures without upstream details. JWT gateway verification
+  remains enabled. The Supabase SDK import is pinned.
+- **Unbounded profile payloads.** Year and major now have length limits; prompt
+  entries must contain string question/answer values. The frontend also filters
+  malformed prompts before rendering them.
+- **Campus email enforcement only ran during signup.** A separate auth trigger
+  now rejects missing/non-campus emails on insert and email change.
+- Applied the previously local cleanup removing the unused `casual` column,
+  preventing duplicate active blocks, and removing report foreign keys that could
+  silently cascade moderation history. There were no casual rooms or duplicate
+  blocks in production. No app records were removed.
 
-- **No secrets in the repo or in git history.** `.env` is gitignored and was never committed
-  (`git log --all -- .env` is empty); nothing tracked matches a JWT / `service_role` /
-  `GOCSPX` / `AIza` / PEM pattern.
-- **The key in the bundle is the right one.** `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is
-  `sb_publishable_*`, not `sb_secret_*`. Publishable keys are meant to ship; RLS is the
-  protection, and RLS is on for all six tables.
-- **The reversed client ID in `app.json` is not a secret.** OAuth client IDs and their URL
-  schemes are public by design; the secret half lives only in Supabase.
-- **No Android Maps key in `app.json`** — nothing to leak. When you add one, restrict it to
-  package name + SHA-1 in the Cloud console.
-- `handle_new_user` and `private.is_member` are `security definer` with `search_path = ''`.
-  `create_room` is `security invoker`, so the insert policies authorise it — no escalation.
-- No `WebView`, no `eval`, no plaintext-HTTP fetch. Both `Linking.openURL` calls go through
-  `mapsUrl` in `data.ts` — fixed `https://maps.apple.com` / `https://www.google.com` hosts,
-  numeric coordinates, and `encodeURIComponent` around the one user-controlled part
-  (`room.place`). The Apple link was `http://` and searched by address text until 2026-08-01;
-  it is https and coordinate-based now, and a non-member's link carries the 3dp approximation
-  rather than the exact pin the server withheld.
+## App fixes in the working tree
 
-## Fixed
-
-### 1. `profiles_select` was `USING (true)` — HIGH
-
-Any signed-in student could dump every profile in one request: `name`, `year`, `major`,
-`dorm`, `interests`, `prompts`. Now:
-
-```sql
-using (id = (select auth.uid()) or private.shares_room(id))
-```
-
-**Read the limit honestly.** This makes the API expose exactly what the UI exposes, no more —
-you can reach a profile only through a room you can see. It does *not* make the directory
-private, because open rooms are visible to everyone and their rosters are public, so anyone
-can still walk rooms → rosters → profiles. On the demo data (9 users, fully interconnected) a
-signed-in student still reaches all 9; a viewer with no year reaches 8 of 9 instead of 9. At
-real scale, where rooms are year-gated and time-limited, it genuinely restricts.
-
-If you want the directory actually private, that's a product decision, not a policy tweak —
-see "Your call" below.
-
-### 2. Pending join requests were visible to everyone — MEDIUM
-
-`room_members_select` returned every row of any visible room, `state` included, so anyone
-could watch who asked to join and hadn't been let in. Pending rows are now the requester's and
-the host's business only. Verified on the one room that has them: host sees 3, the requester
-sees their own 1, a bystander sees 0.
-
-Note this changes what the app shows today — `room.requests` (`api.ts:81`) is now empty for
-non-hosts. That is the intended behaviour, and it is what the host-only approve/decline UI
-would have needed anyway.
-
-### 3. Hosts couldn't see their own year-gated rooms — latent `create_room` failure
-
-Pre-existing, found while testing the above. `rooms_select` had no host clause, so a '27 host
-opening a room for `['29]` could not see the row they had just written — and `create_room`
-does `insert ... returning`, which applies the SELECT policy. The call failed with *"new row
-violates row-level security policy"*. `private.can_see_room` now starts with
-`p_host = auth.uid()`. Both create paths verified.
-
-### 4. Nothing bounded free text or coordinates — LOW
-
-`create_room` checked capacity and access; the insert policies only ever checked *who* was
-writing, never *what*. Added length caps on `rooms.title/place/street/blurb`,
-`room_updates.body`, `reports.reason/detail`, a `capacity <= 100` ceiling, lat/lng range
-checks on `room_pins` and `rooms.approx_*`, and a check that a report names either a room or a
-person. Caps are generous — the longest real row is a 88-char blurb — they exist to stop a
-loop writing megabytes, not to shape the UI.
-
-### 5. The writes shipped, and each one came with its policy — follow-up pass
-
-Join, ask-to-join, approve, decline, leave, post update, end room and report were local state;
-they're real writes now, and every rule they appear to enforce lives in an RLS policy. Two
-findings came out of building them, both caught by `policies.check.sql` rather than by review:
-
-- **A fail-open access check.** `room_members_insert_self` read the room's `years` with a
-  scalar subselect, which is itself RLS-filtered — so for a room you couldn't see it returned
-  null, and a null `years` means "any year". Hiding the room was what let you into it. Fixed
-  by using the security-definer `private.can_see_room(uuid)`; there's a regression case for it.
-- **Silent refusals.** An update or delete whose `using` clause matches nothing succeeds
-  having touched no row. Four of my own checks scored as passing for this reason, and the
-  client had the same hole: `api.ts` now asks for affected rows back and treats an empty
-  result as a refusal. Without it, "Leave room" reports success while leaving you in the room.
-
-Column grants were narrowed so `authenticated` can update only `rooms.canceled_at`,
-`room_members.state` and `profiles.year/major/dorm` — ending a room can't rewrite it, and
-onboarding can't rename you to somebody else. `anon`'s blanket DML grants were revoked; no
-policy named it, so nothing changes today, but a later policy without a role clause would.
-
-Moderation has a reader now: `private.report_queue`, plus `reports.reviewed_at`/`reviewed_note`.
-It isn't granted to `authenticated`, so triage needs the service role. Blocking is real and
-symmetric, folded into `can_see_room`.
-
-## Still yours to do
-
-### 6. Email/password sign-up — REOPENED 2026-08-04, was closed, deliberately
-
-This section used to read "RESOLVED, no action needed" because `POST /auth/v1/signup` returned
-`email_provider_disabled`. **The Email provider is on now, and email confirmation is being
-turned off**, on purpose, to get off Google while auth isn't the work. So the thing this
-section predicted has happened, and it should be read as the open risk it is:
-
-> Turn the Email provider on and the Google-only UI stops meaning anything, because the signup
-> trigger checks the email's domain, not whether the person owns the inbox.
-
-That is now the state. **Anyone who can type any `@ucla.edu` or `@g.ucla.edu` string gets an
-account**, without ever receiving mail at it — and they don't need the app to do it, they POST
-to the auth endpoint with the publishable key that ships in the bundle. The year-gated feed,
-the roster and every "someone from UCLA" promise rest on that address, so what's protecting
-them right now is nothing.
-
-Two ways to close it, and the app supports both without a code change:
-
-- Turn **Confirm email** back on (Authentication → Sign In / Providers → Email). Owning the
-  inbox becomes the check again; `signUp` already handles the no-session response by telling
-  you to go read your mail.
-- Or put Google back and turn the Email provider off, which returns the backend to refusing
-  every method but one — the shape that closed this the first time.
-
-The leaked-password advisor stops being moot while this is open, too: real passwords exist now.
-
-## Closed since
-
-### 7. Demo rows — DELETED 2026-08-01
-
-`delete from auth.users where id::text like '00000000-0000-4000-8000-%'`, which cascaded to
-every profile, room, membership, pin and update. All seven tables are empty; the schema, the
-15 policies, the 8 `private` helpers, the report queue view and the signup trigger are intact,
-and `policies.check.sql` still passes 28/28 against the empty database.
-
-## Still yours to do
-
-### 8. No rate limit on `create_room`
-
-One account can still open rooms in a loop. Needs infrastructure, not a policy.
-
-### 9. Place search is signed-in-only, but not rate limited — same shape as #8
-
-`places-search` gates on `auth.getUser()`, so a stranger can't spend the Google quota. A
-signed-in student still can, and each call is billed. The 350ms debounce and the 3-character
-floor are client-side and therefore not the enforcement — anyone can POST the function
-directly with their own token. Bounded today by a daily quota cap in the Cloud console, which
-caps the bill without stopping the abuser. A per-user counter belongs here eventually.
-
-## Corrections to the second pass
-
-**I got the Places key wrong first time.** The location field originally called
-`places:searchText` straight from `api.ts` with `EXPO_PUBLIC_GOOGLE_PLACES_KEY`, and both
-`AGENTS.md` and `.env.example` said restricting the key to bundle `com.openseat.app` made
-that safe. It does not. Google's iOS/Android application restrictions bind their **native
-SDKs**; the REST web service doesn't honour them, and App Check doesn't cover it either.
-Google's recommended restriction for the Places web service is `IP addresses`, with an
-explicit note that this is impractical for mobile apps and that those should use a proxy
-server. The key would have been extractable from the binary with no working restriction
-behind it, on a per-request-billed API.
-
-Now: `supabase/functions/places-search`, key held as a Supabase secret, session checked
-before the call. Worth keeping straight *why*, because it generalises to the next key —
-`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` ships safely and this one couldn't, and the difference
-isn't the prefix. It's that RLS stands behind the publishable key and nothing stands behind a
-Places key. Before bundling any credential, name what enforces the limit when someone holds
-it. If the answer is "the app wouldn't do that", it isn't enforcement.
-
-## Resolved by deletion
-
-**`dorm` is gone** — dropped from `profiles`, from `Person`, from onboarding and from the
-profile screen. It was the field that made finding #1 more than a privacy nuisance: it named
-the building a stranger sleeps in, it was readable by anyone who could reach the profile, and
-it fed nothing — no filter, no matching, no distance.
-
-Worth recording the reasoning, because it generalises. The options were to guard it (move it
-to a `profile_private` table behind its own policy, the way `room_pins` guards exact
-coordinates) or to remove it. Guarding is the right answer for a field that earns its keep;
-`room_pins` exists because the map genuinely needs coordinates. `dorm` earned nothing, so the
-cheaper and stronger answer was to delete it: a column that isn't there can't be leaked by the
-next policy someone writes. Nothing was lost — no account had ever set one.
-
-The remaining exposure from finding #1 is now name, class year, major, interests and prompts,
-which is a directory of the kind the product is visibly meant to be.
-
-## Corrections to my first pass
-
-- I reported `room_members` had no unique key. Wrong — `room_members_pkey` is already
-  `unique (room_id, profile_id)`. My constraint query filtered to `c`/`u` and missed the
-  primary key. Duplicate memberships were never possible.
-- `api.ts:159` said `create_room` is `security definer`. It's invoker, which is the safer and
-  correct choice. Comment fixed in the same pass.
+- Removed the second session-bootstrap request and profile fetches inside auth
+  callbacks. Profile responses are invalidated when accounts change, and token
+  refresh no longer reloads the profile or blanks the navigator.
+- Account-scoped feed requests share an in-flight read. Late results/errors cannot
+  repopulate another account's cache. Hidden tabs no longer run polling timers;
+  the focused screen retains the 15-second refresh and foreground reconciliation.
+- Sign-out failures are surfaced instead of claiming success.
+- Font imports now include only the three used weights, removing 15 unused font
+  assets from the bundle.
+- Apple is disabled in deployed Supabase Auth. Its button now requires
+  `EXPO_PUBLIC_APPLE_AUTH_ENABLED=true` as well as device support. Enable that
+  flag only after configuring the provider; Google remains available.
+- Updated vulnerable XML dependencies and the Xcode UUID dependency. Upgraded
+  the deep-link decoder with a one-line CommonJS compatibility patch.
+- Added minimal `image-size` guards for malformed ICNS entries and ISO image boxes,
+  with timeout-based regression tests. The patches are applied by the existing
+  `patch-package` postinstall workflow.
+- Replaced stale security claims in the code and this report.
 
 ## Verification
 
-`npm run check` passes. Under simulated sessions (`set local role authenticated` with a
-forged `sub`), for a stranger, a '29 student and a host: no visible `rooms` /`room_members` /
-`room_updates` row points at a profile the viewer can't read, so no embed in `fetchRooms`
-comes back null and `toPerson` can't crash. Year gating still holds — stranger 5 rooms,
-Emi ('29) 6, Maya (hosts 3) 8.
+- `npm ci` successfully reapplies all three dependency patches.
+- `npm run check` passes TypeScript, existing checks, account-cache isolation,
+  Places auth/validation/quota tests, malformed asset tests and deep-link decoding.
+- **85/85 database checks pass** on an isolated local database and the live
+  Supabase database. Live fixtures run inside a transaction ending in rollback.
+- Concurrent creation test: eight simultaneous requests yielded five accepted
+  rooms and three rate-limit refusals. This test is included in CI.
+- Clean local migration replay succeeds. Post-baseline filenames match the versions
+  recorded by Supabase; the older remote pre-baseline history is retained.
+- Live unsigned Places calls and anonymous room reads both return HTTP 401.
+- Native JavaScript/Hermes export succeeds; this is not a device OAuth login test
+  or an App Store release. App-side changes still need a new app build.
 
-Not verified on a device — the policy changes are checked against the queries in `api.ts`,
-not against a running build.
+## Remaining limits and operational notes
+
+- `npm audit` reports **five high findings**, all propagated from two
+  `image-size` advisories. No patched release is currently published. The installed
+  code is locally patched and regression-tested, but npm evaluates package versions
+  and cannot recognize those patches. Track
+  [ICNS](https://github.com/advisories/GHSA-w3rx-r6r6-pgpr) and
+  [JXL/HEIF](https://github.com/advisories/GHSA-5p2g-fcmc-qvqq); remove the local
+  patch when an upstream compatible fix is available.
+- Supabase's five privileged-function warnings are expected: these RPCs enforce
+  caller identity and operate on protected data. Switching room creation back to
+  invoker breaks it. The private counter's RLS-without-policy notice is intentional:
+  direct client access is denied; the checked privileged functions own writes.
+  See [Supabase function security](https://supabase.com/docs/guides/database/functions).
+- Google is enabled; email/password, anonymous sign-in and Apple are disabled.
+  The old review's open email-signup warning was stale. Local config now requires
+  email confirmation if email signup is used during development.
+- This is a campus directory, not an anonymity boundary: visible rooms expose their
+  rosters and exact venue pins. Class year is self-declared. Blocking hides the
+  blocked host's rooms but is not guaranteed to hide a person's presence in a
+  third party's room.
+- Places limits are per-account, not a project-wide spending cap. Keep Google
+  project quotas and billing alerts configured independently.
+- Feed pagination remains a scaling limitation: the query caps results at 200,
+  so sufficiently large histories can crowd newer rooms out. No measured query
+  slowdown justified deleting the existing foreign-key/access indexes.
+- The tracked-source secret-pattern scan found only examples in documentation.
+  No service secret was found in app source. This was not a comprehensive scan of
+  every historical commit or an external penetration test.

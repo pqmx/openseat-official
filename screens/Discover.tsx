@@ -326,11 +326,16 @@ const Map = ({
           />
         ) : (
           /*
-           * A casual room you haven't joined is discoverable but not findable.
-           * The server sends no exact pin at all, so this circle is drawn from
-           * the coarse coordinate every viewer gets — rounded to ~110m, inside
-           * a 150m circle. The room still appears in the list; only the
-           * address is withheld, and now it is withheld by the database.
+           * A room whose exact pin the server withheld is discoverable but not
+           * findable. The circle is drawn from the coarse coordinate every
+           * viewer gets — rounded to ~110m, inside a 150m circle — so the room
+           * still appears; only the address is missing.
+           *
+           * `room_pins_select` currently sends a pin to everyone who can see the
+           * room, so nothing reaches this branch today. It stays because the
+           * absence is a real state: `room_pins` has no constraint requiring a
+           * row, and `showsExactPin` is the only sanctioned way to ask. Drawing
+           * a marker at `undefined` is the alternative.
            */
           <Circle
             key={room.id}
@@ -428,8 +433,8 @@ export function Discover({
 
   /** Flies the camera to a room's pin; `mapPadding` keeps it clear of the sheet. */
   const center = useCallback((room: Room) => {
-    // Falls back to the coarse coordinate for a casual room you haven't joined
-    // — the camera can still fly to its circle, just not to its door.
+    // Falls back to the coarse coordinate when the server withheld the pin —
+    // the camera can still fly to the circle, just not to the door.
     mapRef.current?.animateToRegion(
       {
         latitude: room.lat ?? room.approxLat,

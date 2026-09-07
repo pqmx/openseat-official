@@ -1,0 +1,24 @@
+appId: com.pqmx.openseat
+name: Complete onboarding
+tags:
+  - onboarding
+---
+# Requires a dedicated signed-in account whose profile year is NULL.
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Hey .*"
+    timeout: 20000
+- tapOn: "Senior"
+- tapOn:
+    id: "onboarding-major"
+- inputText: "E2E Testing"
+- hideKeyboard
+- tapOn: "Start looking"
+- extendedWaitUntil:
+    visible: "Discover"
+    timeout: 20000
+- assertVisible: "Rooms"
+- assertVisible: "New"
+- assertVisible: "You"
+

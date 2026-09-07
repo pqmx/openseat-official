@@ -1,9 +1,7 @@
-import {
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_700Bold,
-  useFonts,
-} from '@expo-google-fonts/dm-sans';
+import { DMSans_400Regular } from '@expo-google-fonts/dm-sans/400Regular';
+import { DMSans_500Medium } from '@expo-google-fonts/dm-sans/500Medium';
+import { DMSans_700Bold } from '@expo-google-fonts/dm-sans/700Bold';
+import { useFonts } from 'expo-font';
 import * as Sentry from '@sentry/react-native';
 import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -12,6 +10,7 @@ import { Pressable, Text, View, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SessionProvider } from '../session';
+import { ConnectionBanner, ConnectionProvider } from '../connectivity';
 import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../theme';
 
 /**
@@ -51,7 +50,9 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
     <View
       style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center', padding: 22, gap: 14 }}>
       <Text style={[type.display, { color: c.ink }]}>That screen broke.</Text>
-      <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>{error.message}</Text>
+      <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
+        Something went wrong on our end. It has been reported.
+      </Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Try again"
@@ -87,14 +88,17 @@ function RootLayout() {
           the same height on every phone, so a fixed guess under-covers some. */}
       <SafeAreaProvider>
         <ThemeContext.Provider value={value}>
-          {/* Identity is ambient, like the theme — every screen reads it. */}
-          <SessionProvider>
-            <Stack
-              screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
-              {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
-              <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
-            </Stack>
-          </SessionProvider>
+          <ConnectionProvider>
+            <ConnectionBanner />
+            {/* Identity is ambient, like the theme — every screen reads it. */}
+            <SessionProvider>
+              <Stack
+                screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgCanvas } }}>
+                {/* Report is the app's one sheet — the ⋯ menu on a room or a profile. */}
+                <Stack.Screen name="report" options={{ presentation: 'formSheet', sheetGrabberVisible: true }} />
+              </Stack>
+            </SessionProvider>
+          </ConnectionProvider>
           <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         </ThemeContext.Provider>
       </SafeAreaProvider>

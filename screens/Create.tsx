@@ -19,11 +19,13 @@ import {
   createRoom,
   resolvePlace,
   searchPlaces,
+  tapFail,
+  tapOk,
   useNow,
   type PlaceHit,
   type PlaceSuggestion,
 } from '../api';
-import { classYears } from '../data';
+import { classYears, yearsForHost } from '../data';
 import { clock } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
@@ -129,7 +131,8 @@ export function CreateStep1() {
   const [picking, setPicking] = useState<string>();
   // A ref, not state: nothing renders from it, and as state it would land in the
   // effect's deps and fire a fresh search the moment a pick replaced the token.
-  const session = useRef(newSession());
+  const [initialSession] = useState(newSession);
+  const session = useRef(initialSession);
 
   // Suggestions as you type. Every one of these is free inside `session` — the
   // one charge is the `resolvePlace` below — so the debounce is only here to
@@ -148,9 +151,9 @@ export function CreateStep1() {
       try {
         setHits(await searchPlaces(q, session.current, ctl.signal));
         setSearchFailed(undefined);
-      } catch (e) {
+      } catch {
         if (ctl.signal.aborted) return;
-        setSearchFailed(e instanceof Error ? e.message : 'Place search failed.');
+        setSearchFailed('Place search failed.');
       }
     }, 150);
     return () => {
@@ -171,8 +174,8 @@ export function CreateStep1() {
       setPlace({ title: s.title, sub: s.sub, lat, lng });
       setSearchFailed(undefined);
       session.current = newSession();
-    } catch (e) {
-      setSearchFailed(e instanceof Error ? e.message : 'Could not pin that place.');
+    } catch {
+      setSearchFailed('Could not pin that place.');
     } finally {
       setPicking(undefined);
     }
@@ -192,6 +195,7 @@ export function CreateStep1() {
         <View style={{ gap: 8 }}>
           <Field label="TITLE" focused>
             <TextInput
+              testID="create-title"
               value={title}
               onChangeText={(t) => setTitle(t.slice(0, 60))}
               placeholder="What's happening?"
@@ -210,6 +214,7 @@ export function CreateStep1() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
               <PinIcon color={c.mute2} />
               <TextInput
+                testID="create-location"
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Where?"
@@ -367,8 +372,10 @@ export function CreateStep2({
   // Built once per render rather than rescanned per chip in the year row.
   const chosenYears = new Set(years);
   const divider = { paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: c.hair } as const;
-  const toggleYear = (y: string) =>
+  const toggleYear = (y: string) => {
+    if (y === myYear) return;
     setYears((v) => (v.includes(y) ? v.filter((x) => x !== y) : [...v, y]));
+  };
   const previewYears = yearsOnly && years.length ? ` · ${years.join('–')}` : '';
   // One clock for the label, the preview and the write, so the screen can't
   // promise a time the room doesn't open at. "Now" is the moment you press it.
@@ -388,7 +395,7 @@ export function CreateStep2({
           startsAt,
           capacity: cap,
           access: approve ? 'approve' : 'open',
-          years: yearsOnly && years.length ? years : undefined,
+          years: yearsOnly && years.length ? yearsForHost(years, myYear) : undefined,
         },
         lat,
         lng
@@ -399,10 +406,14 @@ export function CreateStep2({
       // Every entry point pushes step 1 then step 2, always exactly two deep, so
       // dismissing both and pushing fresh lands "back" wherever Create was opened
       // from instead.
+      // Opening a room is the one thing this whole screen exists for, so it is
+      // the one write that doesn't go through `useWrite` and needs its own.
+      tapOk();
       router.dismiss(2);
       router.push(`/room/${id}`);
-    } catch (e) {
-      setFailed(e instanceof Error ? e.message : 'Could not open the room.');
+    } catch {
+      tapFail();
+      setFailed('Could not open the room.');
     } finally {
       setOpening(false);
     }

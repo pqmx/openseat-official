@@ -5,7 +5,7 @@ import { Text, TextInput, useColorScheme, View } from 'react-native';
 import { saveProfile } from '../api';
 import { Body, Eyebrow, Field, PrimaryButton, StatusStrip, YearChip } from '../components/ui';
 import { classYears } from '../data';
-import { useSession } from '../session';
+import { Refusal, useSession } from '../session';
 import { font, radius, type, useTheme } from '../theme';
 
 /**
@@ -33,10 +33,13 @@ const Problem = ({ message }: { message: string }) => {
  *
  * Neither provider is asked to prove the address is a UCLA one — Google can't
  * be told about two hosted domains at once, and Apple can't be told at all.
- * `handle_new_user()` raises on any other domain and the message it raises is
- * what lands in `failed`, so there is one copy of that rule and it's the one
- * that can actually refuse. The Apple path checks the token's email before
- * sending it purely so the refusal names the address; see `session.tsx`.
+ * `handle_new_user()` raises on any other domain, so there is one copy of that
+ * rule and it's the one that can actually refuse. Its wording never reaches
+ * here though — GoTrue collapses a trigger failure on the ID-token path into
+ * `Database error saving new user` — which is why only a `Refusal` is shown
+ * verbatim, and why the Apple path reads the token's email itself so its
+ * refusal can name the address. Google's has no such copy: a non-UCLA account
+ * gets the generic line. See `session.tsx`.
  */
 export function SignIn() {
   const { c } = useTheme();
@@ -48,10 +51,13 @@ export function SignIn() {
   // Android, on the simulator without an Apple ID, and on old iOS.
   const [hasApple, setHasApple] = useState(false);
   useEffect(() => {
+    // Device support alone is insufficient: the provider must be configured in Supabase.
+    if (process.env.EXPO_PUBLIC_APPLE_AUTH_ENABLED !== 'true') return;
     Apple.isAvailableAsync().then(setHasApple, () => setHasApple(false));
   }, []);
 
   const go = (run: () => Promise<void>) => async () => {
+    if (busy) return;
     setBusy(true);
     setFailed(undefined);
     try {
@@ -59,7 +65,9 @@ export function SignIn() {
       // No navigation: the session lands, the gate re-renders as `/onboarding`
       // or `/discover`. Pushing from here would race that.
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : 'Sign-in failed.');
+      // Only a `Refusal` was written to be read. A provider's own error names
+      // tokens and client IDs, which tells the student nothing and us less.
+      setFailed(e instanceof Refusal ? e.message : 'Sign-in failed. Try again.');
     } finally {
       setBusy(false);
     }
@@ -120,8 +128,8 @@ export function SignIn() {
               color: c.faint,
               textAlign: 'center',
             }}>
-            UCLA accounts only — @ucla.edu or @g.ucla.edu. Signing in with Apple works only if
-            your Apple ID is one of those, with Hide My Email off.
+            UCLA accounts only — @ucla.edu or @g.ucla.edu.
+            {hasApple ? ' Signing in with Apple requires one of those addresses, with Hide My Email off.' : ''}
           </Text>
         </View>
       </Body>
@@ -153,8 +161,8 @@ export function Onboarding() {
       await saveProfile(me.id, { year, major });
       await reloadMe();
       router.replace('/discover');
-    } catch (e) {
-      setFailed(e instanceof Error ? e.message : 'Could not save your profile.');
+    } catch {
+      setFailed('Could not save your profile. Try again.');
       setBusy(false);
     }
   };
@@ -195,6 +203,8 @@ export function Onboarding() {
 
         <Field label="MAJOR — OPTIONAL" focused={focus === 'major'}>
           <TextInput
+            testID="onboarding-major"
+            maxLength={120}
             value={major}
             onChangeText={setMajor}
             onFocus={() => setFocus('major')}

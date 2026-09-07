@@ -2,22 +2,21 @@ import { useLocalSearchParams } from 'expo-router';
 import { useRooms } from '../../api';
 import { roomById, viewOf } from '../../data';
 import { NotFound } from '../../screens/NotFound';
-import { Room, RoomCanceled, RoomCasualPreJoin, RoomHost, RoomHostRequests } from '../../screens/Room';
+import { Room, RoomCanceled, RoomHost, RoomHostRequests } from '../../screens/Room';
 import { useSession } from '../../session';
 
-/** Five screens behind one route; a throw in any of them stops here. */
+/** Four screens behind one route; a throw in any of them stops here. */
 export { RouteError as ErrorBoundary } from '../../screens/NotFound';
 
 const views = {
   member: Room,
   host: RoomHost,
   requests: RoomHostRequests,
-  casual: RoomCasualPreJoin,
   canceled: RoomCanceled,
 } as const;
 
 /**
- * One route, five drawings, and `viewOf` decides which from the data alone.
+ * One route, four drawings, and `viewOf` decides which from the data alone.
  *
  * There used to be a `?view=` override here, because joining and ending a room
  * were local state and the fixtures had no way to express the transition. Both

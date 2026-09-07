@@ -1,4 +1,6 @@
+import * as Sentry from '@sentry/react-native';
 import { Link, type ErrorBoundaryProps } from 'expo-router';
+import { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { font, radius, type, useTheme } from '../theme';
 
@@ -47,12 +49,20 @@ export function NotFound() {
  */
 export function RouteError({ error, retry }: ErrorBoundaryProps) {
   const { c } = useTheme();
+  // The root boundary in `_layout` never sees these — an inner one catches
+  // first — so the report has to happen here or `/discover` and `/room/[id]`
+  // throw into silence. Keyed on the error for the same reason it is there:
+  // `retry` re-renders with the same object, and a crash loop would send one
+  // event per render.
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
   return (
     <View
       style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center', padding: 22, gap: 12 }}>
       <Text style={[type.display, { color: c.ink }]}>That didn&rsquo;t load.</Text>
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
-        {error.message}
+        Something went wrong on our end. It has been reported.
       </Text>
       <Pressable
         accessibilityRole="button"
