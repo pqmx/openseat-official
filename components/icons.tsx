@@ -1,9 +1,5 @@
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
-/**
- * Every icon in `openseat v4.dc.html`, transcribed path-for-path.
- * Sizes default to the size the design renders them at.
- */
 type IconProps = { size?: number; color: string };
 
 export const FilterIcon = ({ size = 16, color }: IconProps) => (
@@ -83,11 +79,7 @@ export const MenuIcon = ({ size = 16, color }: IconProps) => (
   </Svg>
 );
 
-/**
- * The curling top-right corner on a "live" card. The design draws it with a
- * gradient-filled path plus a drop shadow; RN SVG has no `filter`, so the
- * shadow is dropped and the gradient carries the lift.
- */
+/** Decorative corner fold on room cards. */
 export const PeelCorner = ({
   size = 28,
   surface,

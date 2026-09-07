@@ -2,11 +2,7 @@ import { Redirect } from 'expo-router';
 import { SignIn } from '../screens/Auth';
 import { useSession } from '../session';
 
-/**
- * Entry route, and the session gate this file was always reserved for. Three
- * states, in order: no session at all, a session whose profile is missing the
- * year the feed is gated on, and a student who can go straight to the map.
- */
+/** Route signed-out users to sign-in and new profiles to onboarding. */
 export default function Index() {
   const { session, me, error, loading, needsOnboarding } = useSession();
 

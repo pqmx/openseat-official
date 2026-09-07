@@ -8,11 +8,6 @@ import { classYears } from '../data';
 import { Refusal, useSession } from '../session';
 import { font, radius, type, useTheme } from '../theme';
 
-/**
- * The gate and the two fields behind it. Both assume the credential carries a
- * name and an email and nothing else — which is all Google and Apple give back.
- */
-
 const Problem = ({ message }: { message: string }) => {
   const { c } = useTheme();
   return (
@@ -28,19 +23,7 @@ const Problem = ({ message }: { message: string }) => {
   );
 };
 
-/**
- * The gate: two buttons, no password.
- *
- * Neither provider is asked to prove the address is a UCLA one — Google can't
- * be told about two hosted domains at once, and Apple can't be told at all.
- * `handle_new_user()` raises on any other domain, so there is one copy of that
- * rule and it's the one that can actually refuse. Its wording never reaches
- * here though — GoTrue collapses a trigger failure on the ID-token path into
- * `Database error saving new user` — which is why only a `Refusal` is shown
- * verbatim, and why the Apple path reads the token's email itself so its
- * refusal can name the address. Google's has no such copy: a non-UCLA account
- * gets the generic line. See `session.tsx`.
- */
+/** Provider sign-in. Campus-email enforcement lives on the server. */
 export function SignIn() {
   const { c } = useTheme();
   const dark = useColorScheme() === 'dark';
@@ -137,11 +120,7 @@ export function SignIn() {
   );
 }
 
-/**
- * Everything Google doesn't return. Year is required and the rest isn't:
- * the feed is year-gated in the database, so an account without one would sign
- * in successfully and then find an almost empty map.
- */
+/** Collect the required class year and optional major. */
 export function Onboarding() {
   const { c } = useTheme();
   const { me, reloadMe } = useSession();

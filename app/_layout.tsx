@@ -13,16 +13,7 @@ import { SessionProvider } from '../session';
 import { ConnectionBanner, ConnectionProvider } from '../connectivity';
 import { ThemeContext, dark, font, light, radius, type, type Scheme } from '../theme';
 
-/**
- * Crash reporting, and nothing else — no tracing, no session replay, no
- * performance sampling. A route that throws is the one thing nobody can tell us
- * about: `app/` throws on load failure by design, and in a shipped build that
- * screen is the last anyone sees of the problem.
- *
- * Silent without `EXPO_PUBLIC_SENTRY_DSN`, so development reports nothing and a
- * checkout without the key still runs. `sendDefaultPii` stays off: the whole
- * point of this backend is that a UCLA email never leaves the row it's in.
- */
+/** Optional production crash reporting without tracing or default PII collection. */
 const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
 if (dsn) {
   Sentry.init({
@@ -35,10 +26,7 @@ if (dsn) {
   });
 }
 
-/**
- * Expo Router renders this for any route that throws. Same tokens as the rest
- * of the app, but it can't use `useTheme` — the provider is what just failed.
- */
+/** Root fallback cannot depend on the theme provider being mounted. */
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   const c = light;
   // Keyed on the error itself: `retry` re-renders this with the same object if

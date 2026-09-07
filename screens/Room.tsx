@@ -54,12 +54,7 @@ import {
 import { getMapsApp, setMapsApp } from '../prefs';
 import { useSession } from '../session';
 
-/**
- * One shape for all five views, because `app/room/[id].tsx` picks between them
- * at runtime — they have to be interchangeable. Only the canceled one reads
- * `rooms`, to offer somewhere else to be. `reload` refetches after a write, so
- * the screen redraws from what the database now says rather than from a guess.
- */
+/** Shared props for room route variants. */
 export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[]; reload: () => Promise<void> };
 import { router } from 'expo-router';
 import { ago } from '../time';
@@ -109,11 +104,7 @@ const RoomTopBar = ({
   );
 };
 
-/**
- * The shell every room view shares — status strip, top bar, scrollable body,
- * footer. No dismissal gesture: the navigator owns every one, and iOS's own
- * edge-swipe back already is the pop.
- */
+/** Room layout with a scrollable body and fixed footer. */
 const RoomScreen = ({
   topBar,
   contentStyle,
@@ -239,13 +230,7 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
         borderColor: c.hair,
         overflow: 'hidden',
       }}>
-      {/*
-       * `pointerEvents="none"` is what makes the plate a button rather than a
-       * map. MapView eats every touch it's given — pan, pinch, tap — so with
-       * gestures merely disabled the press would still never reach the
-       * Pressable. Panning here would be pointless anyway: the destination is
-       * another app, and this is a picture of where you're going.
-       */}
+      {/** Let the surrounding button receive map taps. */}
       <MapView
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
@@ -267,11 +252,7 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
             <Dot color={c.green} size={14} glow={c.greenGlow} glowWidth={6} />
           </Marker>
         ) : (
-          /*
-           * No exact pin means the server withheld it — the same 150m circle
-           * Discover draws, for the same reason. Never a dot on the coarse
-           * coordinate, which would look like an address it isn't.
-           */
+          /** Show an area, not a precise marker, for fallback coordinates. */
           <Circle
             center={{ latitude: lat, longitude: lng }}
             radius={150}
@@ -308,10 +289,7 @@ const RoomMap = ({ room }: { room: RoomModel }) => {
   );
 };
 
-/**
- * The one way into a room. Joining is one write and it has the same four things
- * to say wherever the button appears.
- */
+/** Join or request access, subject to available seats. */
 const JoinButton = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
   const { c } = useTheme();
   const { me } = useSession();
@@ -366,11 +344,7 @@ const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label:
   );
 };
 
-/**
- * Live room, member view — and, because `viewOf` sends non-members of an open
- * room here too, the view where you join one. The design only ever drew the
- * joined state; the footer below is the same screen before you're in it.
- */
+/** Room details for members, pending requests, and visitors. */
 export function Room({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
   const { me } = useSession();
@@ -453,10 +427,7 @@ export function Room({ room, reload }: RoomScreenProps) {
   );
 }
 
-/**
- * The host-only composer. Shared by both host screens rather than copied into
- * each: whichever one you're looking at, posting an update is the same write.
- */
+/** Update composer shared by both host views. */
 const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
   const { c } = useTheme();
   const { me } = useSession();
@@ -731,7 +702,6 @@ export function RoomHostRequests({ room, reload }: RoomScreenProps) {
     </RoomScreen>
   );
 }
-
 
 /** Host called it off. No push, no alert colour — you meet this on opening. */
 export function RoomCanceled({ room, rooms }: RoomScreenProps) {

@@ -202,12 +202,7 @@ export const Roster = ({
   );
 };
 
-/**
- * The selected room, in the sheet. Enough to decide without opening anything —
- * who's hosting, who's there, how far, and the host's last word — plus the one
- * action that matters. Every label comes from the same helpers the feed and the
- * room screen use, so a room reads identically wherever you meet it.
- */
+/** Selected room summary and navigation action. */
 export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
   const { c } = useTheme();
   const { me } = useSession();

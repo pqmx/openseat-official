@@ -6,11 +6,7 @@ import { deleteAccount as deleteAccountRow, fetchPerson } from './api';
 import type { Person } from './data';
 import { supabase } from './supabase';
 
-/**
- * An error whose message was written *for* the student — the only kind a screen
- * may show verbatim. Everything else reaching a `catch` is a provider string, a
- * Postgres error or a network failure, none of which mean anything to them.
- */
+/** An authentication error safe to display to the user. */
 export class Refusal extends Error {}
 
 // Supabase verifies provider tokens. Database triggers enforce campus email
@@ -28,15 +24,7 @@ GoogleSignin.configure({
 
 const UCLA = /@(g\.)?ucla\.edu$/i;
 
-/** The `email` claim, read straight out of an unverified identity token.
- *
- *  This is for the message, never for the decision — `handle_new_user()` is
- *  what refuses, and it sees a token Supabase has actually verified. The reason
- *  to look is that GoTrue reports a trigger failure on the ID-token path as an
- *  opaque `Database error saving new user`, and for Apple the refusal is the
- *  common case rather than the odd one: most students' Apple IDs are personal,
- *  and Hide My Email hands over `@privaterelay.appleid.com`. Worth six lines to
- *  say which address it was. */
+/** Read an unverified email only for refusal copy. Supabase and database triggers enforce identity. */
 const emailIn = (token: string): string | undefined => {
   try {
     const body = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');

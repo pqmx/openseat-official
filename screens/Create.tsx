@@ -333,12 +333,7 @@ const SettingRow = ({ title, sub, right }: { title: string; sub: string; right: 
   );
 };
 
-/**
- * Create, step 2 — when and who. Step 1's half of the draft is required: it
- * gates `Next` on a picked place, so a missing param is a malformed URL, and
- * defaulting one would open a room somewhere nobody chose. The route sends you
- * to NotFound instead.
- */
+/** Schedule and access settings for the validated place from step 1. */
 export function CreateStep2({
   title,
   place,
@@ -572,12 +567,6 @@ export function CreateStep2({
               hair2={c.hair2}
             />
           </View>
-          {/*
-            The room, its pin and your own membership are inserted in one
-            transaction, and we navigate to its real id — so `viewOf` works out
-            host-versus-requests from the access setting on its own, no `?view=`
-            needed. Unlike before, it survives a restart.
-          */}
           {failed ? (
             <Text
               style={{ fontFamily: font.regular, fontSize: 13, color: c.coral, marginBottom: 10 }}>

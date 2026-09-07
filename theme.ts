@@ -1,10 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { TextStyle } from 'react-native';
 
-/**
- * Tokens transcribed from `openseat v4.dc.html` — the two :root blocks, verbatim.
- * No invented values. CSS var name -> camelCase key.
- */
+/** Shared light/dark colors and typography. */
 export const light = {
   bgCanvas: '#EFE7D8',
   surface: '#FAF5EC',

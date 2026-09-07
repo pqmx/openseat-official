@@ -32,7 +32,7 @@ export type Access = 'open' | 'approve';
 export type Room = {
   id: string;
   title: string;
-  /** "Lot D rooftop, level 5" — shown once you're in. */
+  /** Venue and attendance label shared by feed rows. */
   place: string;
   /**
    * Roughly where, rounded to 3dp (~110m). Everyone who can see the room gets
@@ -41,12 +41,7 @@ export type Room = {
    */
   approxLat: number;
   approxLng: number;
-  /**
-   * Exactly where, WGS84 — or absent, because the server withheld it. Exact
-   * coordinates live in `room_pins` behind their own RLS policy, so a viewer the
-   * policy refuses simply receives no row. That is why these are optional:
-   * undefined is the server saying no, not data we forgot to load.
-   */
+  /** Optional WGS84 coordinates; access is decided by the room_pins policy. */
   lat?: number;
   lng?: number;
   host: Person;
@@ -82,59 +77,22 @@ export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attend
 export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
 export const isHost = (room: Room, person: Person) => room.host.id === person.id;
 export const isIn = (room: Room, person: Person) => room.attendees.some((p) => p.id === person.id);
-/**
- * Waiting on the host. Only the host and the requester are sent `requested`
- * rows, so for everyone else this is false because the row isn't there — which
- * is the point: a request nobody approved isn't anybody else's business.
- */
+/** Pending requests are visible only to the host and requester. */
 export const hasAsked = (room: Room, person: Person) =>
   room.requests.some((p) => p.id === person.id);
 
-/**
- * Whether the map may drop a pin. This used to re-derive the rule client-side
- * from a `casual` flag and the roster — which only worked because nothing could
- * query around it, and which turned out to be protecting nothing: the flag had
- * no grant that could set it. Now the server decides, and only the server:
- * coordinates arrive or they don't.
- *
- * A type predicate, so the pin branch gets `lat`/`lng` as plain numbers and
- * there is no way to read them without having checked.
- */
+/** Narrow to coordinates supplied by the server. */
 export const showsExactPin = (room: Room): room is Room & { lat: number; lng: number } =>
   room.lat !== undefined && room.lng !== undefined;
 
 /** Which maps app a handoff link is addressed to. */
 export type MapsApp = 'apple' | 'google';
 
-/**
- * The stored preference, or `undefined` for "never answered".
- *
- * Those are different states and the difference is the whole feature: if a
- * missing value read as `'google'`, the chooser could never appear, because
- * nobody would ever be unset. Anything unrecognised — a value written by a
- * later build, a corrupt read — is treated as unset too, so the app asks again
- * rather than handing `mapsUrl` an app that doesn't exist.
- *
- * Here rather than in `prefs.ts` for the usual reason: `data.ts` is pure, so
- * `data.check.ts` can run this, and AsyncStorage can't be run under node.
- */
+/** Missing or unrecognized preferences prompt the user to choose again. */
 export const asMapsApp = (v: string | null | undefined): MapsApp | undefined =>
   v === 'apple' || v === 'google' ? v : undefined;
 
-/**
- * A link that drops a pin on the room in a real maps app.
- *
- * Coordinates, never an address a geocoder has to guess a rooftop level from.
- * `showsExactPin` decides which pair is ours to send, so a non-member hands off
- * the 3dp approximation and never the door — the same rule the map draws its
- * circle by.
- *
- * Both are `https` universal links rather than the `maps://` and
- * `comgooglemaps://` schemes. A scheme has to be declared in
- * `LSApplicationQueriesSchemes` before iOS will even admit it exists, which
- * means an `app.json` edit and a native rebuild; the https forms open the same
- * apps when installed and fall back to the website when not.
- */
+/** Use server-supplied coordinates. HTTPS links fall back to the web if the maps app is absent. */
 export const mapsUrl = (room: Room, app: MapsApp) => {
   const { lat, lng } = showsExactPin(room)
     ? { lat: room.lat, lng: room.lng }
@@ -163,10 +121,7 @@ export const statusOf = (room: Room, now: Date): Status =>
       ? { label: `LIVE · ${elapsed(room.startsAt, now)}`, tone: 'live' }
       : { label: when(room.startsAt, now), tone: 'soon' };
 
-/**
- * "Lot D rooftop · 14 here" — one rule for every feed row. No distance: nothing
- * measures one, and that would mean asking for location.
- */
+/** Venue and attendance label shared by feed rows. */
 export const metaOf = (room: Room, now: Date) =>
   [
     room.place,
@@ -185,11 +140,7 @@ export const viewOf = (room: Room, me: Person): RoomView => {
   return 'member';
 };
 
-/**
- * The years a room can be limited to, and the ones onboarding offers. Shared
- * so the two lists can't drift — a year Create can restrict to but onboarding
- * can't set would be a room nobody could see.
- */
+/** Class-year choices shared by onboarding and room creation. */
 export const classYears = ["'27", "'28", "'29", 'Grad'];
 
 /** A host may narrow the audience, but never hide their own room from themself. */
@@ -198,16 +149,7 @@ export const yearsForHost = (years: string[] | undefined, hostYear: string | und
   return [...years, hostYear];
 };
 
-/**
- * The tags a profile can carry — and the only ones it can. The picker offers
- * these and has no free-text path, which is the point: a tag you type is a tag
- * nothing else can ever match on, and free text on a profile other students
- * read is a moderation surface with nothing behind it.
- *
- * Postgres caps the count and the size (`profiles_interests_sane`) but not the
- * vocabulary — a CHECK can't hold the subquery that would take. So this list is
- * the vocabulary, the same way `classYears` is.
- */
+/** Suggested profile interests; the server bounds payload size, not this vocabulary. */
 export const interestTags = [
   'Late-night food',
   'Study rooms',
@@ -229,11 +171,7 @@ export const maxInterests = 6;
 /** As long an answer as one prompt gets. */
 export const maxAnswer = 140;
 
-/**
- * The two questions every profile is asked, with the copy shown until they're
- * answered. The labels are the design's; they used to be typed into
- * `ProfileEmpty` as decoration, which is why nothing could fill them in.
- */
+/** Profile questions and empty-answer placeholders. */
 export const promptQuestions = [
   { q: 'MY IDEAL FRIDAY IS', placeholder: 'Ten words is plenty. Say the real one.' },
   { q: 'TAKE ME TO A ROOM ABOUT', placeholder: "Anything, as long as it's not another club fair." },
@@ -246,13 +184,7 @@ const rank = (q: string) => {
   return i < 0 ? promptQuestions.length : i;
 };
 
-/**
- * One answer set, replaced or removed, in the order the questions are asked.
- *
- * Sorted rather than appended because the stored order *is* the order everyone
- * else reads: `Profile` maps `person.prompts` straight out. Append, and editing
- * your first answer quietly moves it below your second on their screen.
- */
+/** Replace or remove an answer while preserving question order. */
 export const withAnswer = (prompts: Person['prompts'], q: string, a: string) => {
   const text = a.trim();
   const rest = (prompts ?? []).filter((p) => p.q !== q);
@@ -278,16 +210,7 @@ export const myRooms = (rooms: Room[], me: Person, now: Date) =>
       return live !== 0 ? live : a.startsAt.getTime() - b.startsAt.getTime();
     });
 
-/**
- * Rooms this viewer can see: live ones first, then upcoming by soonest, and
- * inside each group the one that started or starts nearest to now.
- *
- * The `years` filter is belt-and-braces: `rooms_select` in the database already
- * refuses to return a room your year can't see, so a restricted room is absent
- * rather than filtered. One exception it does *not* mirror — the server always
- * hands a host their own room back — which is why a host who restricts a room
- * away from their own year won't see it here. The Rooms tab is that view.
- */
+/** Filter by class year; show live rooms first, then upcoming rooms by start time. */
 export const feedFor = (rooms: Room[], year: string, now: Date) =>
   rooms
     .filter((r) => (!r.years || r.years.includes(year)) && !r.canceledAt)

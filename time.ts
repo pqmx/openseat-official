@@ -1,8 +1,4 @@
-/**
- * Every time string the app shows, derived from a Date — nothing hardcoded.
- * No Intl: Hermes ships it, but hand-rolling four formats is smaller than
- * carrying a locale dependency and keeps `time.check.ts` deterministic.
- */
+/** Local-calendar time labels. */
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -25,10 +21,7 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 const daysApart = (a: Date, b: Date) =>
   Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / DAY);
 
-/**
- * When a room opens, as the feed writes it: today is a bare time, the next
- * six days get a weekday, anything further gets a date.
- */
+/** Today uses a time, the next six days a weekday, and later dates a month/day. */
 export const when = (at: Date, now: Date) => {
   const days = daysApart(at, now);
   if (days <= 0) return clock(at);

@@ -22,10 +22,7 @@ import { em, font, radius, type, useTheme } from '../theme';
 const detents = [0.12, 0.55, 0.92];
 const HALF = 1;
 
-/**
- * Westwood, framed so the campus rooms and the village rooms both land on
- * screen. Only the opening shot — after that the camera is the map's own.
- */
+/** Initial map region; subsequent camera movements belong to the user. */
 const westwood: Region = {
   latitude: 34.0686,
   longitude: -118.4465,
@@ -36,25 +33,13 @@ const westwood: Region = {
 /** Tight enough to read a building, wide enough to keep its neighbours. */
 const closeDelta = { latitudeDelta: 0.006, longitudeDelta: 0.005 };
 
-/*
- * Marker geometry. These are constants rather than inline numbers because the
- * anchor is computed from them: a marker is anchored by fraction, so the only
- * way to keep the *dot* on the coordinate while a label hangs underneath is to
- * know exactly how tall the whole thing is. Line heights are set explicitly
- * for the same reason — a font that measured a pixel taller would slide every
- * pin off its building.
- */
+/** Marker dimensions keep the dot anchored to its coordinate when labels change. */
 const PIN = { dot: 15, dotSelected: 26, pad: 8, gap: 3, line: 13, cardLine: 15 };
 
 /** Fraction down the marker view where the dot's centre sits. */
 const anchorY = (height: number, dot: number) => (PIN.pad + dot / 2) / height;
 
-/**
- * A pin. Every room names itself, so you can read the map without tapping
- * anything — but unselected that name is map typography, not a chip: plain
- * text on a white halo, the way Apple labels its own places. Only the selected
- * room earns a card, which is what keeps four labels from reading as clutter.
- */
+/** Selected pins show a card; other pins show a compact label. */
 const MapPin = ({
   room,
   selected,
@@ -192,12 +177,7 @@ const FeedTabs = ({ active, onChange }: { active: string; onChange: (t: string) 
   );
 };
 
-/**
- * The filter panel, under the filter button. Deliberately does not offer a time
- * window — `FeedTabs` already owns that, and two controls for one axis is how
- * filter UIs start lying to people. No distance limit either: nothing measures
- * one, and that would mean asking for location.
- */
+/** Seat filter. FeedTabs owns the time window. */
 const Filters = ({
   query,
   onChange,
@@ -232,11 +212,7 @@ const Filters = ({
         <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.ink }}>
           Only rooms with a seat
         </Text>
-        {/*
-          The row is the switch. `Toggle` is a switch in its own right when it
-          gets an `onPress`, so handing it one here would put two controls on
-          one setting — the screen reader would find both. It stays a picture.
-        */}
+        {/** The row owns accessibility and taps; the nested toggle is decorative. */}
         <View pointerEvents="none" importantForAccessibility="no-hide-descendants">
           <Toggle on={!!query.openOnly} />
         </View>

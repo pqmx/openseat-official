@@ -24,15 +24,7 @@ const clamp = (v: number, lo: number, hi: number) => {
   return Math.min(Math.max(v, lo), hi);
 };
 
-/**
- * A controlled sheet with a fixed set of stops. It owns the drag and nothing
- * else — the caller owns `index`, so opening the sheet from elsewhere on the
- * screen is a `setState`, and nothing the map does can move it by accident.
- *
- * Two gestures rather than one, because the two areas want opposite things:
- * dragging the header always moves the sheet, dragging the list scrolls it and
- * only moves the sheet once the list is back at the top.
- */
+/** Controlled snap positions. Header drags move the sheet; list drags yield at the top. */
 export const BottomSheet = ({
   index,
   onIndexChange,

@@ -378,11 +378,6 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
               />
             ))}
           </View>
-          {/*
-            Unset shows as neither selected rather than defaulting a highlight
-            onto Google — the preference genuinely hasn't been made yet, and
-            drawing it as though it had is the screen lying about its own state.
-          */}
           {mapsApp ? null : (
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}>
               Asked the first time you open a room's map.
@@ -390,10 +385,6 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
           )}
         </View>
 
-        {/*
-          Absent until there is something in it. A permanently visible "Blocked
-          (0)" is a screen advertising a feature; the list exists to be undone.
-        */}
         {blocks.length ? (
           <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair, gap: 12 }}>
             <Eyebrow>BLOCKED</Eyebrow>
@@ -419,11 +410,6 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
                 />
               </View>
             ))}
-            {/*
-              Blocking is symmetric and folded into `can_see_room`, so it hides
-              their rooms from you and yours from them. Worth saying, because
-              lifting it is the only way either of you gets the other back.
-            */}
             <Text style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}>
               Neither of you sees the other's rooms until this is lifted.
             </Text>
@@ -431,26 +417,12 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
         ) : null}
 
         <View style={{ marginTop: 'auto', marginBottom: 11, flexDirection: 'row', gap: 10 }}>
-          {/*
-            The prompts are editable above and sign-in belongs to Google, so
-            there is no profile-setup screen left for this to open. It says what
-            it does: the profile is finished on this screen, and the next thing
-            to do is open a room.
-          */}
           <PrimaryButton
             label="Open a room"
             height={44}
             onPress={() => router.push('/create')}
             style={{ flex: 1 }}
           />
-          {/*
-            This opened the report sheet, which on your own profile meant
-            offering to report yourself. Sign-out had no button anywhere in the
-            app — you could get in and never out — so this is where it lives,
-            and it is where deleting the account lives too: Apple wants that
-            reachable without writing in, and this is the only screen that is
-            unambiguously yours.
-          */}
           <Pressable
             testID="account-options"
             accessibilityRole="button"

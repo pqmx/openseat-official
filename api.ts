@@ -126,16 +126,7 @@ export const fetchPerson = async (id: string): Promise<Person | undefined> => {
   return data ? toPerson(data) : undefined;
 };
 
-/**
- * Every field of your own profile you may write — which is every field
- * `authenticated` holds an UPDATE grant on, and no more. `name`, `short` and
- * `initials` are absent on purpose: Google set them through
- * `handle_new_user()`, and the grant, not this signature, is what keeps them.
- * Sending one here gets a 403 rather than a rename.
- *
- * `year` is not cosmetic: `rooms_select` keys the whole feed off it, so a
- * profile without one sees almost nothing.
- */
+/** Patch editable profile fields. Provider names remain protected by column grants. */
 export const saveProfile = async (
   id: string,
   patch: { year?: string; major?: string; interests?: string[]; prompts?: Person['prompts'] },
@@ -253,22 +244,7 @@ export type PlaceSuggestion = { id: string; title: string; sub: string };
 /** A place you can actually open a room at — a name and the coordinates behind it. */
 export type PlaceHit = { title: string; sub: string; lat: number; lng: number };
 
-/**
- * Place search for Create's location field, via the `places-search` edge function.
- *
- * **The Google key is deliberately not here, and must not move here.** Anything
- * the client can read, so can anyone holding the binary — and unlike the
- * Supabase publishable key, which is safe because RLS is the protection, a
- * Places key has no protection behind it. The Places *web service* accepts no
- * application restriction that holds: iOS/Android key restrictions bind the
- * native SDKs, not the REST endpoint, and App Check doesn't cover it either.
- * Google's own guidance for a mobile app calling a Maps web service is a proxy
- * server, so the function is that proxy. It holds the key and checks your
- * session before spending it.
- *
- * Pass the same token through autocomplete and the final details lookup.
- * Both can be billed; the server limits both, including abandoned sessions.
- */
+/** Use the authenticated server proxy; reuse the session token for autocomplete and details. */
 export const searchPlaces = async (
   query: string,
   session: string,
@@ -296,12 +272,7 @@ export const resolvePlace = async (
   return data;
 };
 
-/**
- * Creates the room, its pin and the host's own membership in one transaction.
- * Three inserts from the client could half-succeed and leave a room nobody is
- * in. The privileged RPC checks the caller and rate limit; direct inserts are
- * revoked so callers cannot bypass those checks.
- */
+/** Create the room, pin, and host membership atomically through the rate-limited RPC. */
 export const createRoom = async (draft: Draft, lat: number, lng: number): Promise<string> => {
   const { data, error } = await supabase.rpc('create_room', {
     p_title: draft.title,
@@ -317,17 +288,7 @@ export const createRoom = async (draft: Draft, lat: number, lng: number): Promis
   return data as string;
 };
 
-/**
- * The writes. Every rule they look like they enforce — who may join, who may
- * approve, who may post — is a policy in the database; these only choose which
- * statement to send. A button that sends the wrong one gets refused, not obeyed.
- *
- * A refusal is not always an error, which is the trap here. An insert that fails
- * `with check` raises, but an update or delete whose `using` clause matches no
- * row simply succeeds having done nothing. So every one of these asks for the
- * affected rows back and treats an empty result as the refusal it is — otherwise
- * "Leave room" would cheerfully report success while leaving you in the room.
- */
+/** Updates/deletes may succeed with zero affected rows under RLS; treat that as refusal. */
 const changed = <T>(
   { data, error }: { data: T[] | null; error: { message: string } | null },
   refusal: string,
@@ -415,16 +376,7 @@ export type Block = {
   at: Date;
 };
 
-/**
- * Everyone you've blocked, newest first.
- *
- * An RPC rather than a select, because blocking someone is exactly what makes
- * them unreadable: `profiles_select` only reaches a stranger through
- * `private.shares_room`, which `private.can_see_room` refuses for a blocked
- * pair. Embedding `reports -> profiles` returns a null profile on every row, so
- * `public.my_blocks()` is a definer function that hands back the three columns a
- * row needs to draw — for reports you filed, and no one else's.
- */
+/** The RPC returns blocked profiles that ordinary profile reads cannot access. */
 export const fetchBlocks = async (): Promise<Block[]> => {
   const { data, error } = await supabase.rpc('my_blocks');
   if (error) throw error;
@@ -442,41 +394,19 @@ export const unblock = async (reportId: string) =>
     'That block could not be lifted.',
   );
 
-/**
- * Ends the account, which Apple requires and nothing here could do.
- *
- * It is one RPC because the last statement is a delete from `auth.users`, which
- * no policy can express and no student may send. `public.delete_me()` is
- * `security definer` and does the rest in the same transaction: the rooms you
- * host are called off rather than deleted, so the people who joined find out;
- * your profile is scrubbed to a tombstone so those rooms still render; and the
- * reports you filed stay, because they are the block, and deleting your account
- * must not quietly make you visible again to someone you blocked.
- *
- * The caller signs out afterwards — see `deleteAccount` in `session.tsx`. There
- * is no session left to keep, and `onAuthStateChange` is what clears the feed.
- */
+/** Delete the login while preserving room tombstones and moderation history. The caller signs out next. */
 export const deleteAccount = async () => {
   const { error } = await supabase.rpc('delete_me');
   if (error) throw error;
 };
 
-/**
- * The two feelings a write has. Fire-and-forget on purpose: hardware without a
- * Taptic Engine rejects, and a statement the database already accepted must not
- * fail on the buzz that follows it.
- */
+/** Haptic failures must not fail a successful operation. */
 export const tapOk = () =>
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 export const tapFail = () =>
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
 
-/**
- * One in-flight write at a time, and a sentence when it fails. Without this each
- * of the seven buttons would need its own try/catch, and a double tap would send
- * the statement twice. Handlers can't reach the router's ErrorBoundary — nothing
- * is rendering when they run — so a failed write says so where you pressed it.
- */
+/** Prevent duplicate writes and report failures at the point of interaction. */
 export const useWrite = () => {
   const [busy, setBusy] = useState(false);
   const run = useCallback(

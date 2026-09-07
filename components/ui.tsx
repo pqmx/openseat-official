@@ -22,10 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { font, radius, type, useTheme, type Colors } from '../theme';
 import { ClockIcon, FilterIcon, HomeIcon, PersonIcon, PlusIcon } from './icons';
 
-/** Reserves the real status bar / Dynamic Island. A fixed guess (the design's
- *  50px) undershoots on phones with a taller inset than whatever it was drawn
- *  against, which crowds the header — and on Create, crowds the back button
- *  into the island's dead zone, so it stops being tappable. */
+/** Reserve the device’s top safe-area inset. */
 export const StatusStrip = () => {
   const { top } = useSafeAreaInsets();
   return <View style={{ height: top }} />;
@@ -433,10 +430,7 @@ export const Radio = ({ on }: { on: boolean }) => {
   );
 };
 
-/**
- * Eyebrow label over an underlined value — every text input in the design.
- * `focused` is the 1.5px ink rule; unfocused is the 1px hairline.
- */
+/** Labeled input with an underline showing focus. */
 export const Field = ({
   label,
   focused,
@@ -511,14 +505,7 @@ export const MapFilterButton = ({
   );
 };
 
-/**
- * Four equal slots. The design floated the create button between the third
- * and fourth tab, which lands it off-centre and reading as misplaced; giving
- * it a slot and a label of its own makes the row even and says what it does.
- *
- * Rendered once, by app/(tabs)/_layout.tsx — the active slot comes from the
- * URL, so nothing has to pass it down.
- */
+/** App tabs; the active slot follows the current route. */
 export const TabBar = () => {
   const { c } = useTheme();
   const path = usePathname();
@@ -667,17 +654,7 @@ export const Body = ({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
-  /**
-   * For a screen whose content is *chosen* while the keyboard is up — Create's
-   * place list is the only one. Without it the suggestions render behind the
-   * keyboard, and the first tap on a visible one is swallowed dismissing the
-   * keyboard instead of reaching the row. Together those read as "results only
-   * appear when you press Return".
-   *
-   * Opt-in rather than the default on purpose: `'handled'` lets a tap land on
-   * another control *without* blurring the field first, and `/you` saves a
-   * prompt on blur.
-   */
+  /** Allow taps on results while the keyboard is open. */
   keyboardAware?: boolean;
 }) => (
   <ScrollView

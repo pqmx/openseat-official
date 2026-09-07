@@ -1,14 +1,5 @@
-/**
- * Where a released drag lands. Pure so `snap.check.ts` can run it under plain
- * node, same as `time.ts` — the sheet's only real logic lives here rather than
- * inside a worklet, where nothing can reach it.
- */
 
-/**
- * Snap offsets are measured from the top of the sheet's container, so a
- * *smaller* offset is a *more open* sheet. Callers pass them in whatever order
- * reads well; only the distances matter.
- */
+/** Smaller offsets open the sheet further. Snap order does not affect distance selection. */
 export const nearestSnap = (offset: number, snaps: number[], velocity = 0) => {
   // Called from the gesture's UI-thread callback; under plain node the
   // directive is an inert string, so `snap.check.ts` runs it unchanged.
