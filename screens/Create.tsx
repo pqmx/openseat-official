@@ -19,12 +19,11 @@ import {
   createRoom,
   resolvePlace,
   searchPlaces,
-  tapFail,
-  tapOk,
   useNow,
   type PlaceHit,
   type PlaceSuggestion,
 } from '../api';
+import { tapFail, tapOk } from '../feedback';
 import { classYears, yearsForHost } from '../data';
 import { clock } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';

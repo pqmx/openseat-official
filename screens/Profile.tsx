@@ -11,7 +11,8 @@ import {
   StatusStrip,
   TextButton,
 } from '../components/ui';
-import { fetchBlocks, saveProfile, unblock, useNow, useWrite, type Block } from '../api';
+import { fetchBlocks, saveProfile, unblock, useNow, type Block } from '../api';
+import { useWrite } from '../feedback';
 import {
   hostedBy,
   interestTags,

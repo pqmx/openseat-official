@@ -34,8 +34,8 @@ import {
   leaveRoom,
   postUpdate,
   useNow,
-  useWrite,
 } from '../api';
+import { useWrite } from '../feedback';
 import {
   feedFor,
   hasAsked,

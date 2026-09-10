@@ -10,7 +10,8 @@ import {
   Toggle,
 } from '../components/ui';
 import { router, useLocalSearchParams } from 'expo-router';
-import { submitReport, useWrite } from '../api';
+import { submitReport } from '../api';
+import { useWrite } from '../feedback';
 import { useSession } from '../session';
 import { em, font, radius, useTheme } from '../theme';
 
