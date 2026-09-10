@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState, Pressable, Text, View } from 'react-native';
 import { font, useTheme } from './theme';
-import { checkConnection, type ConnectionState } from './connectivity-state';
+import { connectionFromNetwork, type ConnectionState } from './connectivity-state';
+import NetInfo from '@react-native-community/netinfo';
 
 type ConnectionValue = { state: ConnectionState; retry: () => Promise<void> };
 const ConnectionContext = createContext<ConnectionValue | undefined>(undefined);
@@ -15,24 +16,17 @@ export const useConnection = () => {
 export const ConnectionProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<ConnectionState>('checking');
   const retry = useCallback(async () => {
-    setState('checking');
-    setState(await checkConnection());
+    try {
+      const network = await NetInfo.refresh();
+      setState(connectionFromNetwork(network));
+    } catch { setState('offline'); }
   }, []);
 
   useEffect(() => {
-    void retry();
-    const appState = AppState.addEventListener('change', (next) => {
-      if (next === 'active') void retry();
-    });
-    return () => appState.remove();
+    const unsubscribe = NetInfo.addEventListener((network) => setState(connectionFromNetwork(network)));
+    const appState = AppState.addEventListener('change', (next) => { if (next === 'active') void retry(); });
+    return () => { unsubscribe(); appState.remove(); };
   }, [retry]);
-
-  // When offline, keep checking quietly so the banner clears without requiring a tap.
-  useEffect(() => {
-    if (state !== 'offline') return;
-    const timer = setInterval(() => void retry(), 15_000);
-    return () => clearInterval(timer);
-  }, [retry, state]);
 
   const value = useMemo(() => ({ state, retry }), [retry, state]);
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>;

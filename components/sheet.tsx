@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   type LayoutChangeEvent,
+  type FlatList,
+  type ListRenderItem,
   StyleSheet,
   type StyleProp,
   View,
@@ -18,6 +20,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { nearestSnap } from '../snap';
 import { radius, useTheme } from '../theme';
+import type { Room } from '../data';
 
 const clamp = (v: number, lo: number, hi: number) => {
   'worklet';
@@ -33,16 +36,26 @@ export const BottomSheet = ({
   header,
   children,
   contentStyle,
+  data,
+  renderItem,
+  footer,
+  refreshing,
+  onRefresh,
 }: {
   index: number;
   onIndexChange: (i: number) => void;
   /** Fraction of the container visible at each stop, most closed first. */
   detents: number[];
   /** The caller's, so it can scroll the list to a selection. */
-  listRef: AnimatedRef<Animated.ScrollView>;
+  listRef: AnimatedRef<FlatList<Room>>;
   /** Always visible; the drag handle sits above it. */
   header: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  data: Room[];
+  renderItem: ListRenderItem<Room>;
+  footer?: React.ReactElement | null;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   contentStyle?: StyleProp<ViewStyle>;
 }) => {
   const { c } = useTheme();
@@ -113,7 +126,7 @@ export const BottomSheet = ({
       if (moving.value) release(e.velocityY);
     });
 
-  const slide = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }], height: Math.max(0, height - y.value) }));
 
   return (
     <View
@@ -170,17 +183,26 @@ export const BottomSheet = ({
           </GestureDetector>
 
           <GestureDetector gesture={listPan}>
-            <Animated.ScrollView
+            <Animated.FlatList<Room>
               ref={listRef}
+              data={data}
+              renderItem={renderItem}
+              keyExtractor={(room) => room.id}
+              initialNumToRender={6}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              ListEmptyComponent={<View>{children}</View>}
+              ListFooterComponent={footer}
+              refreshing={!!refreshing}
+              onRefresh={onRefresh}
               // The sheet reads the top of the list to decide who gets the
               // drag; a rubber-banding list would lie about being there.
               bounces={false}
               overScrollMode="never"
               scrollEnabled={index > 0}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={contentStyle}>
-              {children}
-            </Animated.ScrollView>
+              contentContainerStyle={contentStyle}
+            />
           </GestureDetector>
         </Animated.View>
       )}

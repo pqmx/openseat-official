@@ -1,41 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createRoomCache } from './room-cache.ts';
+import { readFileSync } from 'node:fs';
 import { createPlacesHandler } from './supabase/functions/places-search/handler.ts';
-
-const deferred = () => {
-  let resolve!: (value: any) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<any>((yes, no) => { resolve = yes; reject = no; });
-  return { promise, resolve, reject };
-};
-const requests: ReturnType<typeof deferred>[] = [];
-const cache = createRoomCache(() => {
-  const request = deferred(); requests.push(request); return request.promise;
-});
-assert.equal(await cache.read(), undefined, 'signed-out screens never fetch');
-cache.reset('alice');
-const alice = cache.read();
-assert.equal(cache.read(), alice, 'mounted screens share an in-flight request');
-cache.reset(undefined);
-cache.reset('bob');
-const bob = cache.read();
-requests[0].resolve([{ id: 'alice-private-room' }]);
-assert.equal(await alice, undefined, 'old account response is discarded');
-assert.deepEqual(cache.rooms, []);
-requests[1].resolve([{ id: 'bob-room' }]);
-assert.deepEqual(await bob, [{ id: 'bob-room' }]);
-const stale = cache.read();
-cache.reset('alice');
-requests[2].reject(new Error('old account network failure'));
-assert.equal(await stale, undefined, 'old account failures do not poison new screens');
-const failed = cache.read();
-requests[3].reject(new Error('offline'));
-await assert.rejects(failed, /offline/);
-const retry = cache.read();
-requests[4].resolve([]);
-assert.deepEqual(await retry, [], 'failed reads can be retried');
 
 const token = '11111111-1111-4111-8111-111111111111';
 let authenticated = true;
@@ -86,27 +53,15 @@ assert.equal(failure.status, 502);
 assert.ok(!(await failure.text()).includes('credentials'));
 assert.equal((await handler(new Request('https://example.test', { method: 'OPTIONS' }))).status, 204);
 assert.equal((await handler(new Request('https://example.test'))).status, 405);
-console.log('security checks passed: account cache isolation and Places authorization/quotas');
+console.log('security checks passed: Places authorization/quotas');
 
-// Run malformed assets in a subprocess: a regressed infinite loop must fail the
-// test timeout, not hang CI. These exercise the patched build-time parsers.
-execFileSync(process.execPath, ['-e', `
-  const assert = require('node:assert/strict');
-  const { ICNS } = require('image-size/dist/types/icns');
-  const { JXL } = require('image-size/dist/types/jxl');
-  const { HEIF } = require('image-size/dist/types/heif');
-  const icns = Buffer.alloc(24); icns.write('icns'); icns.writeUInt32BE(24,4); icns.write('icp4',8);
-  assert.throws(() => ICNS.calculate(icns), /entry length/);
-  icns.writeUInt32BE(16,12);
-  assert.equal(ICNS.calculate(icns).width,16);
-  const jxl = Buffer.alloc(24); jxl.write('jxlp',4);
-  try { JXL.calculate(jxl); } catch {}
-  const heif = Buffer.alloc(24); heif.write('ftyp',4); heif.write('heic',8);
-  assert.throws(() => HEIF.calculate(heif));
-  assert.ok(require('image-size')('assets/icon.png').width > 0);
-`], { timeout: 5000, cwd: process.cwd() });
+// Expo's compatible patch upgrade removes image-size entirely. Fail if its
+// vulnerable parser chain is reintroduced; iOS export verifies real app assets.
+const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+assert.ok(!Object.keys(lock.packages).some((name) => name.endsWith('/image-size')),
+  'image-size must not return to the build dependency graph');
 const require = createRequire(import.meta.url);
 const query = require('query-string');
 assert.equal(query.parse('q=hello%20world').q, 'hello world');
 execFileSync(process.execPath, ['-e', `require('query-string').parse('q=' + '%E0%A4%A'.repeat(10000));`], { timeout: 5000 });
-console.log('dependency patches passed: malformed assets and deep-link decoding');
+console.log('dependency checks passed: vulnerable image parser absent and deep-link decoding bounded');

@@ -6,9 +6,11 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import {
   Pressable,
+  ActivityIndicator,
   ScrollView,
   Text,
   View,
@@ -71,6 +73,7 @@ const PulseDot = ({ color, size = 6 }: { color: string; size?: number }) => {
     const leg = (toValue: number) =>
       withTiming(toValue, { duration: 1200, easing: Easing.inOut(Easing.ease) });
     opacity.value = withRepeat(withSequence(leg(0.3), leg(1)), -1);
+    return () => cancelAnimation(opacity);
   }, [opacity]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
@@ -256,7 +259,9 @@ export const PrimaryButton = ({
       onPress={onPress}
       style={[
         {
-          height,
+          minHeight: height,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
           borderRadius: radius.md,
           backgroundColor: disabled ? c.disabled : danger ? c.danger : c.coral,
           flexDirection: 'row',
@@ -284,12 +289,14 @@ export const TextButton = ({
   label,
   style,
   onPress,
+  disabled,
 }: {
   label: string;
   style?: StyleProp<TextStyle>;
   onPress?: () => void;
+  disabled?: boolean;
 }) => (
-  <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8}>
+  <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} hitSlop={8}>
     <Text style={style}>{label}</Text>
   </Pressable>
 );
@@ -302,6 +309,7 @@ export const Chip = ({
   color,
   style,
   onPress,
+  disabled,
 }: {
   label: string;
   selected?: boolean;
@@ -309,12 +317,14 @@ export const Chip = ({
   color?: string;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
+  disabled?: boolean;
 }) => {
   const { c } = useTheme();
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={[
         {
@@ -384,6 +394,7 @@ export const Toggle = ({ on, onPress }: { on: boolean; onPress?: () => void }) =
       accessibilityRole={onPress ? 'switch' : undefined}
       accessibilityState={{ checked: on }}
       onPress={onPress}
+      hitSlop={10}
       style={[
         {
           width: 42,
@@ -461,21 +472,24 @@ export const Field = ({
 export const MapFilterButton = ({
   filtersOn,
   onFilters,
+  expanded,
 }: {
   /** Dot on the button when the feed is narrowed. */
   filtersOn?: boolean;
   onFilters: () => void;
+  expanded?: boolean;
 }) => {
   const { c } = useTheme();
+  const { top } = useSafeAreaInsets();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Filters"
-      accessibilityState={{ expanded: !!filtersOn }}
+      accessibilityState={{ expanded: !!expanded }}
       onPress={onFilters}
       style={{
         position: 'absolute',
-        top: 60,
+        top: top + 10,
         right: 20,
         width: 42,
         height: 42,
@@ -554,12 +568,13 @@ export const Footer = ({
   column?: boolean;
 }) => {
   const { c } = useTheme();
+  const { bottom } = useSafeAreaInsets();
   return (
     <View
       style={{
         paddingTop: 14,
         paddingHorizontal: 22,
-        paddingBottom: 28,
+        paddingBottom: Math.max(bottom, 14),
         borderTopWidth: 1,
         borderTopColor: c.hair,
         backgroundColor: raised ? c.raised : c.surface,
@@ -588,14 +603,27 @@ export const Body = ({
   <ScrollView
     style={[{ flex: 1 }, style]}
     contentContainerStyle={contentStyle}
-    // Scrolling away from a field closes the keyboard, which blurs it. That is
-    // load-bearing on `/you`: a prompt saves on blur, so without this you could
-    // type an answer, scroll, background the app and lose it.
+    // Dismiss on scroll; profile changes stay in the explicit-save draft.
     keyboardDismissMode="on-drag"
     keyboardShouldPersistTaps={keyboardAware ? 'handled' : undefined}
     // iOS only. Android resizes already, from Expo's default layout mode.
-    automaticallyAdjustKeyboardInsets={keyboardAware}
+    automaticallyAdjustKeyboardInsets
     showsVerticalScrollIndicator={false}>
     {children}
   </ScrollView>
 );
+
+/** Network status stays beside usable content; first loads have a visible placeholder. */
+export const LoadState = ({ loading, error, retry }: { loading?: boolean; error?: unknown; retry: () => void }) => {
+  const { c } = useTheme();
+  if (!loading && !error) return null;
+  return (
+    <View accessibilityLiveRegion="polite" style={{ padding: 16, gap: 8, backgroundColor: c.surface }}>
+      {loading ? <ActivityIndicator accessibilityLabel="Loading rooms" color={c.coral} /> : null}
+      {error ? <>
+        <Text style={{ color: c.mute, fontFamily: font.regular }}>Couldn't refresh. Previously loaded information may be out of date.</Text>
+        <TextButton label="Retry" onPress={retry} style={{ color: c.coral }} />
+      </> : null}
+    </View>
+  );
+};

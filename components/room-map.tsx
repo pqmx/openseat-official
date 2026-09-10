@@ -14,24 +14,17 @@ export const RoomMap = ({ room }: { room: RoomModel }) => {
   const exact = showsExactPin(room);
   const lat = exact ? room.lat : room.approxLat;
   const lng = exact ? room.lng : room.approxLng;
-  // iOS has no API for "your preferred maps app" — the setting doesn't exist,
-  // so the only honest way to know is to ask. But asking on every tap is a
-  // dialog between someone and the place they're trying to walk to, so it is
-  // asked once and remembered. `Alert` rather than `ActionSheetIOS` because
-  // this screen ships on Android too, where an action sheet would need a
-  // dependency to do what three buttons already do.
+  const { run } = useWrite();
   const pick = (app: MapsApp) => {
     void setMapsApp(app);
-    void Linking.openURL(mapsUrl(room, app));
+    void run(() => Linking.openURL(mapsUrl(room, app)));
   };
 
   const openMaps = async () => {
     const saved = await getMapsApp();
-    if (saved) return void Linking.openURL(mapsUrl(room, saved));
+    if (saved) return void run(() => Linking.openURL(mapsUrl(room, saved)));
     Alert.alert(
       room.place,
-      // Say that it sticks. Quietly remembering an answer nobody was told you'd
-      // keep is how a preference turns into a surprise.
       "Open room locations in — you can change this later on your profile.",
       [
         { text: 'Google Maps', onPress: () => pick('google') },

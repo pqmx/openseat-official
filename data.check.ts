@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import {
   feedFor,
+  filterFeed,
+  feedWindowEnd,
+  isEnded,
+  isLive,
+  hasAsked,
+  attendeeCountOf,
   isIn,
   matchesQuery,
   myRooms,
@@ -18,6 +24,7 @@ import {
   type Person,
   type Room,
 } from './data.ts';
+import { classYearsAt, roomShareUrl, safeRoomDestination } from './room-rules.ts';
 
 /**
  * `data.ts` is pure, so these run on constructed rows rather than fixtures.
@@ -212,4 +219,28 @@ assert.deepEqual(yearsForHost(["'29"], "'27"), ["'29", "'27"]);
 assert.deepEqual(yearsForHost(["'27", "'29"], "'27"), ["'27", "'29"]);
 assert.equal(yearsForHost(undefined, "'27"), undefined, 'no restriction stays open to everyone');
 
-console.log('data.ts ok');
+const now = new Date('2026-01-01T21:00:00Z');
+const expired = room({ startsAt: new Date(+now - 4 * 3600000) });
+assert.equal(isEnded(expired, now), true, 'expiry includes the exact four-hour boundary');
+assert.equal(isLive(expired, now), false);
+assert.equal(isEnded(room({ endedAt: now }), now), true, 'hosts can end early');
+assert.equal(viewOf(expired, me, now), 'ended');
+assert.deepEqual(filterFeed([expired, room(), later], 'Live', now).map((r) => r.id), ['r1']);
+const weekEnd = feedWindowEnd('This week', now);
+assert.deepEqual(filterFeed([room({ startsAt: weekEnd })], 'This week', now), []);
+const midnight = feedWindowEnd('Tonight', now);
+assert.equal(midnight.getHours(), 0);
+assert.deepEqual(filterFeed([room({ startsAt: midnight })], 'Tonight', now), []);
+const summary = room({ attendeeCount: 10, attendees: two, viewerId: me.id, viewerState: 'requested' });
+assert.equal(attendeeCountOf(summary), 10);
+assert.equal(seatsLeft(summary), 8, 'preview roster length is not capacity');
+assert.equal(hasAsked(summary, me), true);
+assert.equal(hasAsked(summary, other), false, 'viewer state belongs only to that account');
+assert.deepEqual(myRooms([summary], me, now), [summary], 'pending rooms appear in Rooms');
+assert.deepEqual(classYearsAt(new Date(2026, 8, 1)), ["'27", "'28", "'29", "'30", 'Grad']);
+const id = '11111111-1111-4111-8111-111111111111';
+assert.equal(roomShareUrl(id), 'openseat://room/' + id);
+assert.equal(safeRoomDestination('/room/' + id), '/room/' + id);
+for (const unsafe of ['https://evil.test', '/create', '//evil.test', '/room/../create', null])
+  assert.equal(safeRoomDestination(unsafe), '/discover');
+console.log('data.ts ok: lifecycle, time windows, summary counts, pending requests, room links');

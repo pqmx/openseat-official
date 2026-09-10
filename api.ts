@@ -2,26 +2,17 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import type { Access, Draft, Person, Room, Tone, Update } from './data';
-import { ROOM_REFRESH_MS } from './refresh';
-import { createRoomCache } from './room-cache';
+import { feedWindowEnd } from './data';
+import { ROOM_PAGE_SIZE, MAX_UPDATE_LENGTH, MAX_REPORT_LENGTH, type FeedWindow } from './room-rules';
+import { UserError } from './errors';
+import { invalidateRooms, useRoomResource } from './room-resource';
 import { supabase } from './supabase';
 
 /** Convert Supabase rows to app data. Database policies enforce access. */
 
 const personCols = 'id, name, short, initials, year, major, tone, interests, prompts';
 
-/**
- * The same person, as much of them as a roster row draws — and no more.
- *
- * `fetchRooms` embeds a profile for the host, every member and every update's
- * author, so whatever is listed here is handed over for most of the user base
- * in a single request. `interests` and `prompts` are free text somebody wrote
- * about themselves and nothing outside `screens/Profile` renders them, so they
- * are not the feed's to carry. The profile route fetches the full row through
- * `fetchPerson` when somebody actually taps through.
- *
- * `year` and `major` stay: `Room` and the feed card both print them.
- */
+/** Detail rosters omit profile prompts and interests; fetchPerson owns those. */
 const rosterCols = 'id, name, short, initials, year, major, tone';
 
 // PostgREST returns an embedded one-to-one as an object, but a to-many as an
@@ -51,7 +42,7 @@ const toUpdate = (r: any): Update => ({
 });
 
 const roomCols = `
-  id, title, place, starts_at, canceled_at, capacity,
+  id, title, place, starts_at, ends_at, ended_at, canceled_at, capacity,
   access, years, approx_lat, approx_lng,
   host:profiles!rooms_host_id_fkey(${rosterCols}),
   pin:room_pins(lat, lng),
@@ -78,8 +69,13 @@ const toRoom = (r: any): Room => {
     // only permitted way to ask about.
     lat: pin?.lat ?? undefined,
     lng: pin?.lng ?? undefined,
-    host: toPerson(r.host),
+    host: r.host ? toPerson(r.host) : { id: r.host_id ?? '', name: 'Unavailable', short: 'Unavailable', initials: '?', year: '', major: '' },
     startsAt: new Date(r.starts_at),
+    endsAt: r.ends_at ? new Date(r.ends_at) : undefined,
+    endedAt: r.ended_at ? new Date(r.ended_at) : undefined,
+    attendeeCount: r.attendee_count === undefined ? undefined : Number(r.attendee_count),
+    viewerId: r.viewer_id,
+    viewerState: r.viewer_state ?? undefined,
     canceledAt: r.canceled_at ? new Date(r.canceled_at) : undefined,
     capacity: r.capacity,
     access: r.access,
@@ -87,36 +83,44 @@ const toRoom = (r: any): Room => {
     attendees: named('member'),
     requests: named('requested'),
     // Newest first: the room screen and every preview show `updates[0]`.
-    updates: (r.updates ?? []).map(toUpdate).sort((a: Update, b: Update) => +b.at - +a.at),
+    updates: (r.updates ?? []).filter((u: any) => !!u.author).map(toUpdate).sort((a: Update, b: Update) => +b.at - +a.at),
   };
 };
 
-/**
- * Every room the signed-in student may see, up to a ceiling.
- *
- * The ceiling is the point. This is one request that fans out to a profile per
- * host, per member and per update author, and every one of those rows re-runs
- * `profiles_select` -> `shares_room` -> `can_see_room`, which is three
- * subqueries each. Unbounded, the cost grows with rooms x members and a signed-in
- * caller can hold it in a loop; `room_updates` in particular had no bound at all,
- * so a host posting in a loop grew every feed response for everyone.
- *
- * ponytail: two fixed ceilings, not pagination. The feed is "what's on today" and
- * has never had a second page; if it ever needs one, this becomes a cursor on
- * `starts_at` and the ceilings stay as the page size.
- */
-export const fetchRooms = async (): Promise<Room[]> => {
-  const { data, error } = await supabase
-    .from('rooms')
-    .select(roomCols)
-    .order('starts_at', { ascending: true })
-    .limit(200)
-    // Newest first so the ceiling keeps the updates that matter — every screen
-    // reads `updates[0]`, and the room screen shows the recent few.
-    .order('created_at', { referencedTable: 'updates', ascending: false })
-    .limit(20, { referencedTable: 'updates' });
+export type RoomScope = 'discover' | 'mine' | 'host';
+export type RoomQuery = { scope?: RoomScope; hostId?: string; window?: FeedWindow; openOnly?: boolean };
+type Cursor = { at: string; id: string };
+
+/** Filters precede pagination; summary pages retain database RLS. */
+export const fetchRoomPage = async (query: RoomQuery, cursor?: Cursor) => {
+  const { data, error } = await supabase.rpc('room_summary_page', {
+    p_scope: query.scope ?? 'discover', p_host: query.hostId ?? null,
+    p_window: query.window ?? 'Live',
+    p_before: feedWindowEnd(query.window ?? 'Live', new Date()).toISOString(),
+    p_open_only: !!query.openOnly, p_cursor_at: cursor?.at ?? null, p_cursor_id: cursor?.id ?? null,
+    p_limit: ROOM_PAGE_SIZE + 1,
+  });
   if (error) throw error;
-  return (data ?? []).map(toRoom);
+  const rows: any[] = data ?? [];
+  const shown = rows.slice(0, ROOM_PAGE_SIZE);
+  const last = shown.at(-1);
+  return { rooms: shown.map(toRoom), next: rows.length > ROOM_PAGE_SIZE && last
+    ? { at: last.starts_at as string, id: last.id as string } : undefined };
+};
+
+/** A room link is independent of whichever feed pages have been loaded. */
+export const fetchRoom = async (id: string): Promise<Room | null> => {
+  const { data, error } = await supabase.from('rooms').select(roomCols).eq('id', id)
+    .order('created_at', { referencedTable: 'updates', ascending: false })
+    .limit(20, { referencedTable: 'updates' }).maybeSingle();
+  if (error) throw error;
+  return data ? toRoom(data) : null;
+};
+
+export const useRoom = (id: string) => {
+  const fetchValue = useCallback(() => fetchRoom(id), [id]);
+  const result = useRoomResource('room:' + id, fetchValue);
+  return { ...result, room: result.data };
 };
 
 export const fetchPerson = async (id: string): Promise<Person | undefined> => {
@@ -145,94 +149,48 @@ export const saveProfile = async (
     'Could not save your profile.',
   );
 
-/** Share feed reads across screens; discard the snapshot on account changes. */
-const roomCache = createRoomCache(fetchRooms);
-
-supabase.auth.onAuthStateChange((_e, s) => {
-  roomCache.reset(s?.user.id);
-});
-
-/**
- * Every room the signed-in student may see. One request: RLS decides the rows,
- * so there is no "visible to me" filter to get wrong on the client.
- */
-export const useRooms = () => {
-  const [rooms, setRooms] = useState<Room[]>(roomCache.rooms);
-  const [error, setError] = useState<Error>();
-  // Two questions, and one boolean answered both wrong.
-  //
-  // `loading` is "nothing to paint yet". The feeds render null on it, so a warm
-  // cache must not raise it, or every navigation and every write blanks a
-  // screen that already had the answer.
-  //
-  // `settled` is "this mount has heard back". Only that tells a dead link from
-  // a room not fetched yet: the room you just created is missing from the cache
-  // for one paint, and `roomById` can't tell that from a bad id on its own.
-  const [loading, setLoading] = useState(!roomCache.rooms.length);
-  const [settled, setSettled] = useState(false);
-  const requestVersion = useRef(0);
-
-  const reload = useCallback(() => {
-    const version = ++requestVersion.current;
-    return roomCache.read()
-      .then((r) => {
-        if (!r || version !== requestVersion.current) return;
-        setRooms(r);
-        setError(undefined);
-      })
-      .catch((error) => { if (version === requestVersion.current) setError(error); })
-      .finally(() => {
-        if (version !== requestVersion.current) return;
-        setLoading(false);
-        setSettled(true);
-      });
-  }, []);
-
+/** Fetch only pages the user requested, preserving them while refreshing. */
+export const useRooms = (query: RoomQuery = {}) => {
+  const { scope = 'discover', hostId, window = 'Live', openOnly = false } = query;
+  const baseKey = JSON.stringify([scope, hostId, window, openOnly]);
+  const [pagination, setPagination] = useState({ key: baseKey, count: 1 });
+  const count = pagination.key === baseKey ? pagination.count : 1;
+  const fetchValue = useCallback(async () => {
+    let cursor: Cursor | undefined;
+    const rooms: Room[] = [];
+    for (let page = 0; page < count; page++) {
+      const result = await fetchRoomPage({ scope, hostId, window, openOnly }, cursor);
+      rooms.push(...result.rooms);
+      cursor = result.next;
+      if (!cursor) break;
+    }
+    return { rooms: [...new Map(rooms.map((room) => [room.id, room])).values()], hasMore: !!cursor };
+  }, [scope, hostId, window, openOnly, count]);
+  const result = useRoomResource(baseKey + ':' + count, fetchValue);
+  const previous = useRef<{ key: string; userId?: string; data: Awaited<ReturnType<typeof fetchValue>> } | undefined>(undefined);
   useEffect(() => {
-    let userId = roomCache.userId;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (userId === session?.user.id) return;
-      userId = session?.user.id;
-      ++requestVersion.current;
-      clearTimeout(timer);
-      setRooms([]);
-      setError(undefined);
-      setSettled(false);
-      setLoading(!!userId);
-      if (userId) timer = setTimeout(() => void reload(), 0);
-    });
-    return () => { ++requestVersion.current; clearTimeout(timer); data.subscription.unsubscribe(); };
-  }, [reload]);
-
-  // Hidden tabs stay mounted. Only the focused screen needs a polling timer.
-  useFocusEffect(useCallback(() => {
-    void reload();
-    const id = setInterval(() => {
-      if (AppState.currentState === 'active') void reload();
-    }, ROOM_REFRESH_MS);
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void reload();
-    });
-    return () => { clearInterval(id); sub.remove(); };
-  }, [reload]));
-
-  return { rooms, loading, settled, error, reload };
+    if (result.data) previous.current = { key: baseKey, userId: result.userId, data: result.data };
+  }, [baseKey, result.data, result.userId]);
+  const data = result.data ?? (previous.current?.key === baseKey && previous.current.userId === result.userId
+    ? previous.current.data : undefined);
+  return { ...result, rooms: data?.rooms ?? [], hasMore: data?.hasMore ?? false,
+    loading: !data && result.loading, settled: !!data || !!result.error,
+    loadMore: () => { if (!result.refreshing && data?.hasMore) setPagination({ key: baseKey, count: count + 1 }); } };
 };
 
-/**
- * Re-renders on a cadence so "LIVE · 22 MIN" doesn't go stale on screen.
- *
- * A clock, not a fetch: this moves `now` forward so the derived labels recompute
- * from rooms already in memory. A room somebody else opened still won't appear
- * until the focused screen's next refresh.
- */
+/** Clocks stop on hidden screens and while the app is in the background. */
 export const useNow = (everyMs = 10_000) => {
   const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), everyMs);
-    return () => clearInterval(id);
-  }, [everyMs]);
+  useFocusEffect(useCallback(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const update = (active: boolean) => {
+      clearInterval(timer);
+      if (active) { setNow(new Date()); timer = setInterval(() => setNow(new Date()), everyMs); }
+    };
+    update(AppState.currentState === 'active');
+    const sub = AppState.addEventListener('change', (state) => update(state === 'active'));
+    return () => { clearInterval(timer); sub.remove(); };
+  }, [everyMs]));
   return now;
 };
 
@@ -261,10 +219,11 @@ export const searchPlaces = async (
 export const resolvePlace = async (
   id: string,
   session: string,
+  signal?: AbortSignal,
 ): Promise<{ lat: number; lng: number }> => {
   const { data, error } = await supabase.functions.invoke<{ lat: number; lng: number }>(
     'places-search',
-    { body: { placeId: id, session } },
+    { body: { placeId: id, session }, signal },
   );
   if (error) throw error;
   if (!data) throw new Error('Could not pin that place.');
@@ -284,6 +243,7 @@ export const createRoom = async (draft: Draft, lat: number, lng: number): Promis
     p_lng: lng,
   });
   if (error) throw error;
+  invalidateRooms();
   return data as string;
 };
 
@@ -293,7 +253,8 @@ const changed = <T>(
   refusal: string,
 ) => {
   if (error) throw error;
-  if (!data?.length) throw new Error(refusal);
+  if (!data?.length) throw new UserError(refusal);
+  invalidateRooms();
   return data;
 };
 
@@ -330,15 +291,17 @@ export const declineRequest = async (roomId: string, personId: string) =>
     'That request could not be declined.',
   );
 
-export const postUpdate = async (roomId: string, meId: string, body: string) =>
-  changed(
+export const postUpdate = async (roomId: string, meId: string, body: string) => {
+  if (!body.trim() || [...body].length > MAX_UPDATE_LENGTH) throw new UserError('Updates must be between 1 and 500 characters.');
+  return changed(
     await supabase.from('room_updates').insert({ room_id: roomId, author_id: meId, body }).select('id'),
     'Only the host can post updates here.',
   );
+};
 
-export const endRoom = async (roomId: string) =>
+export const endRoom = async (roomId: string, cancel = false) =>
   changed(
-    await supabase.from('rooms').update({ canceled_at: new Date().toISOString() }).eq('id', roomId).select('id'),
+    await supabase.from('rooms').update(cancel ? { canceled_at: new Date().toISOString() } : { ended_at: new Date().toISOString() }).eq('id', roomId).select('id'),
     'Only the host can end this room.',
   );
 
@@ -350,8 +313,9 @@ export const submitReport = async (report: {
   reason: string;
   detail?: string;
   blocked: boolean;
-}) =>
-  changed(
+}) => {
+  if ([...(report.detail ?? '')].length > MAX_REPORT_LENGTH) throw new UserError('Report details must be 1,000 characters or fewer.');
+  return changed(
     await supabase
       .from('reports')
       .insert({
@@ -365,6 +329,7 @@ export const submitReport = async (report: {
       .select('id'),
     'That report could not be filed.',
   );
+};
 
 /** Somebody you blocked, and the report row that is the block. */
 export type Block = {

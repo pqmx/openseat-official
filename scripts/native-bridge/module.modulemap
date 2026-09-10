@@ -1,0 +1,5 @@
+module RuntimeSchedulerRegression {
+  header "../../node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
+  requires cplusplus
+  export *
+}

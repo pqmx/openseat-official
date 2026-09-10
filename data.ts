@@ -1,5 +1,6 @@
 // `.ts` so node can run data.check.ts unbundled, same as time.check.ts.
 import { elapsed, when } from './time.ts';
+import { classYearsAt, ROOM_DURATION_HOURS, type FeedWindow } from './room-rules.ts';
 
 /** Pure app models and derived labels. Viewer identity is passed explicitly. */
 
@@ -32,13 +33,9 @@ export type Access = 'open' | 'approve';
 export type Room = {
   id: string;
   title: string;
-  /** Venue and attendance label shared by feed rows. */
+  /** Venue text is visible to anyone eligible to see the room, before approval. */
   place: string;
-  /**
-   * Roughly where, rounded to 3dp (~110m). Everyone who can see the room gets
-   * these, and the map draws its 150m circle from them — coarser than the
-   * circle itself, so the circle stops being decoration over an exact address.
-   */
+  /** Rounded fallback coordinates for a missing exact pin; not a privacy guarantee. */
   approxLat: number;
   approxLng: number;
   /** Optional WGS84 coordinates; access is decided by the room_pins policy. */
@@ -46,6 +43,8 @@ export type Room = {
   lng?: number;
   host: Person;
   startsAt: Date;
+  endsAt?: Date;
+  endedAt?: Date;
   canceledAt?: Date;
   capacity: number;
   access: Access;
@@ -53,6 +52,10 @@ export type Room = {
   years?: string[];
   /** Everyone in, host included — the host holds a membership row too. */
   attendees: Person[];
+  /** Summaries carry three preview people and an authoritative count. */
+  attendeeCount?: number;
+  viewerId?: string;
+  viewerState?: 'member' | 'requested';
   /** Waiting on the host, for `access: 'approve'` rooms. */
   requests: Person[];
   updates: Update[];
@@ -64,16 +67,21 @@ export const roomById = (rooms: Room[], id: string) => rooms.find((r) => r.id ==
 /** Rooms this person hosts, live first — the tail of their profile. */
 export const hostedBy = (rooms: Room[], personId: string, now: Date) =>
   rooms
-    .filter((r) => r.host.id === personId && !r.canceledAt)
+    .filter((r) => r.host.id === personId && !isClosed(r, now))
     .sort((a, b) => Number(isLive(b, now)) - Number(isLive(a, now)));
 
-export const seatsLeft = (room: Room) => Math.max(0, room.capacity - room.attendees.length);
-export const isLive = (room: Room, now: Date) => !room.canceledAt && room.startsAt <= now;
+export const attendeeCountOf = (room: Room) => room.attendeeCount ?? room.attendees.length;
+export const seatsLeft = (room: Room) => Math.max(0, room.capacity - attendeeCountOf(room));
+export const endsAt = (room: Room) => room.endsAt ?? new Date(+room.startsAt + ROOM_DURATION_HOURS * 3_600_000);
+export const isEnded = (room: Room, now: Date) => !!room.endedAt || endsAt(room) <= now;
+export const isClosed = (room: Room, now: Date) => !!room.canceledAt || isEnded(room, now);
+export const isLive = (room: Room, now: Date) => !isClosed(room, now) && room.startsAt <= now;
 export const isHost = (room: Room, person: Person) => room.host.id === person.id;
-export const isIn = (room: Room, person: Person) => room.attendees.some((p) => p.id === person.id);
+export const isIn = (room: Room, person: Person) => room.viewerId === person.id
+  ? room.viewerState === 'member' : room.attendees.some((p) => p.id === person.id);
 /** Pending requests are visible only to the host and requester. */
 export const hasAsked = (room: Room, person: Person) =>
-  room.requests.some((p) => p.id === person.id);
+  room.viewerId === person.id ? room.viewerState === 'requested' : room.requests.some((p) => p.id === person.id);
 
 /** Narrow to coordinates supplied by the server. */
 export const showsExactPin = (room: Room): room is Room & { lat: number; lng: number } =>
@@ -111,6 +119,8 @@ export type Status = { label: string; tone: 'live' | 'soon' | 'off' };
 export const statusOf = (room: Room, now: Date): Status =>
   room.canceledAt
     ? { label: 'CANCELED', tone: 'off' }
+    : isEnded(room, now)
+      ? { label: 'ENDED', tone: 'off' }
     : isLive(room, now)
       ? { label: `LIVE · ${elapsed(room.startsAt, now)}`, tone: 'live' }
       : { label: when(room.startsAt, now), tone: 'soon' };
@@ -120,22 +130,23 @@ export const metaOf = (room: Room, now: Date) =>
   [
     room.place,
     isLive(room, now)
-      ? `${room.attendees.length} here`
-      : `${room.attendees.length} of ${room.capacity} seats`,
+      ? `${attendeeCountOf(room)} joined`
+      : `${attendeeCountOf(room)} of ${room.capacity} seats`,
   ].join(' · ');
 
 /** Room route states. */
-export type RoomView = 'member' | 'host' | 'requests' | 'canceled';
+export type RoomView = 'member' | 'host' | 'requests' | 'canceled' | 'ended';
 
 /** Select the room screen from lifecycle state and viewer membership. */
-export const viewOf = (room: Room, me: Person): RoomView => {
+export const viewOf = (room: Room, me: Person, now?: Date): RoomView => {
   if (room.canceledAt) return 'canceled';
+  if (room.endedAt || (now && isEnded(room, now))) return 'ended';
   if (isHost(room, me)) return room.access === 'approve' ? 'requests' : 'host';
   return 'member';
 };
 
 /** Class-year choices shared by onboarding and room creation. */
-export const classYears = ["'27", "'28", "'29", 'Grad'];
+export const classYears = classYearsAt(new Date());
 
 /** A host may narrow the audience, but never hide their own room from themself. */
 export const yearsForHost = (years: string[] | undefined, hostYear: string | undefined) => {
@@ -198,7 +209,7 @@ export type Draft = {
 /** Rooms you host or have joined, live first — the Rooms tab. */
 export const myRooms = (rooms: Room[], me: Person, now: Date) =>
   rooms
-    .filter((r) => isIn(r, me))
+    .filter((r) => isIn(r, me) || hasAsked(r, me) || isHost(r, me))
     .sort((a, b) => {
       const live = Number(isLive(b, now)) - Number(isLive(a, now));
       return live !== 0 ? live : a.startsAt.getTime() - b.startsAt.getTime();
@@ -207,7 +218,7 @@ export const myRooms = (rooms: Room[], me: Person, now: Date) =>
 /** Filter by class year; show live rooms first, then upcoming rooms by start time. */
 export const feedFor = (rooms: Room[], year: string, now: Date) =>
   rooms
-    .filter((r) => (!r.years || r.years.includes(year)) && !r.canceledAt)
+    .filter((r) => (!r.years || r.years.includes(year)) && !isClosed(r, now))
     .sort((a, b) => {
       const live = Number(isLive(b, now)) - Number(isLive(a, now));
       if (live !== 0) return live;
@@ -216,3 +227,11 @@ export const feedFor = (rooms: Room[], year: string, now: Date) =>
         ? b.startsAt.getTime() - a.startsAt.getTime()
         : a.startsAt.getTime() - b.startsAt.getTime();
     });
+
+/** Feed windows use the viewer's local calendar; identical boundaries go to the API. */
+export const feedWindowEnd = (tab: FeedWindow, now: Date) =>
+  new Date(now.getFullYear(), now.getMonth(), now.getDate() + (tab === 'This week' ? 7 : 1));
+
+export const filterFeed = (rooms: Room[], tab: FeedWindow, now: Date) => rooms.filter((room) =>
+  !isClosed(room, now) && (tab === 'Live' ? isLive(room, now) : room.startsAt < feedWindowEnd(tab, now)),
+);

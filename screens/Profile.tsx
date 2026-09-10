@@ -10,11 +10,14 @@ import {
   PrimaryButton,
   StatusStrip,
   TextButton,
+  LoadState,
+  YearChip,
 } from '../components/ui';
 import { fetchBlocks, saveProfile, unblock, useNow, type Block } from '../api';
 import { useWrite } from '../feedback';
 import {
   hostedBy,
+  classYears,
   interestTags,
   maxAnswer,
   maxInterests,
@@ -26,7 +29,7 @@ import {
 } from '../data';
 import { getMapsApp, setMapsApp } from '../prefs';
 import { useSession } from '../session';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** 25px name — only the two profile screens use it. */
@@ -53,7 +56,7 @@ const Prompt = ({ label, answer }: { label: string; answer: string }) => {
 const reportHref = (person: Person) =>
   `/report?person=${person.id}&name=${encodeURIComponent(person.name)}`;
 
-export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
+export function Profile({ person, rooms, pagination }: { person: Person; rooms: Room[]; pagination?: React.ReactNode }) {
   const { c } = useTheme();
   const now = useNow();
   const hosts = hostedBy(rooms, person.id, now);
@@ -88,7 +91,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
               {person.year} · {person.major}
             </Text>
             <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-              {hosts.length} {hosts.length === 1 ? 'room' : 'rooms'} hosted
+              {hosts.length} active {hosts.length === 1 ? 'room' : 'rooms'} shown
             </Text>
           </View>
         </View>
@@ -118,6 +121,7 @@ export function Profile({ person, rooms }: { person: Person; rooms: Room[] }) {
           </View>
         ) : null}
 
+        {pagination}
         <View
           style={{
             marginTop: 'auto',
@@ -149,15 +153,16 @@ const PromptField = ({
   q,
   placeholder,
   answer,
-  onSave,
+  onChange,
+  disabled,
 }: {
   q: string;
   placeholder: string;
   answer: string;
-  onSave: (text: string) => void;
+  onChange: (text: string) => void;
+  disabled?: boolean;
 }) => {
   const { c } = useTheme();
-  const [text, setText] = useState(answer);
   const [focused, setFocused] = useState(false);
   return (
     <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: focused ? c.ink2 : c.hair }}>
@@ -165,15 +170,11 @@ const PromptField = ({
       <TextInput
         multiline
         maxLength={maxAnswer}
-        value={text}
-        onChangeText={setText}
+        value={answer}
+        onChangeText={onChange}
+        editable={!disabled}
         onFocus={() => setFocused(true)}
-        // Saved on blur, not per keystroke: one write per answer instead of one
-        // per letter, and nothing to debounce.
-        onBlur={() => {
-          setFocused(false);
-          if (text.trim() !== answer) onSave(text);
-        }}
+        onBlur={() => setFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={c.faint}
         style={[type.prompt, { color: c.ink, marginTop: 8, padding: 0 }]}
@@ -183,22 +184,30 @@ const PromptField = ({
 };
 
 /** Profile editing, hosted rooms, and account settings. */
-export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
+export function YourProfile({ me, rooms, pagination }: { me: Person; rooms: Room[]; pagination?: React.ReactNode }) {
   const { c } = useTheme();
   const { signOut, deleteAccount, reloadMe } = useSession();
   const now = useNow();
-  const { run } = useWrite();
+  const { busy, run } = useWrite();
   // Blocking someone is what hides them, so this can't be read off `rooms` or
   // any profile select — it comes from `my_blocks()`. Loaded here rather than in
   // the route because it is this section's own data and nothing else reads it.
   const [blocks, setBlocks] = useState<Block[]>([]);
-  const loadBlocks = useCallback(() => void fetchBlocks().then(setBlocks).catch(() => {}), []);
-  useEffect(loadBlocks, [loadBlocks]);
+  const [blocksError, setBlocksError] = useState<unknown>();
+  const loadBlocks = useCallback(async () => {
+    try { setBlocks(await fetchBlocks()); setBlocksError(undefined); }
+    catch (error) { setBlocksError(error); }
+  }, []);
+  useFocusEffect(useCallback(() => { void loadBlocks(); }, [loadBlocks]));
   const hosts = hostedBy(rooms, me.id, now);
-  const interests = me.interests ?? [];
+  const [interests, setInterests] = useState(me.interests ?? []);
   // Built once per render rather than rescanned per chip in the `interestTags` row.
   const chosen = new Set(interests);
-  const prompts = me.prompts ?? [];
+  const [prompts, setPrompts] = useState(me.prompts ?? []);
+  const [year, setYear] = useState(me.year);
+  const [major, setMajor] = useState(me.major);
+  const dirty = JSON.stringify({ interests, prompts, year, major: major.trim() }) !==
+    JSON.stringify({ interests: me.interests ?? [], prompts: me.prompts ?? [], year: me.year, major: me.major });
   // Read once on mount rather than held in a context: the room screen reads
   // storage at press time, so there is no second copy of this to keep in sync.
   const [mapsApp, setMapsAppState] = useState<MapsApp>();
@@ -206,19 +215,16 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
     void getMapsApp().then(setMapsAppState);
   }, []);
 
-  // `reloadMe` rather than local state: the row Postgres kept is the profile,
-  // and a constraint or a grant can refuse a write this screen thought landed.
-  const save = (patch: Parameters<typeof saveProfile>[1]) =>
-    void run(async () => {
-      await saveProfile(me.id, patch);
-      await reloadMe();
-    });
-
+  const save = () => run(async () => {
+    const normalized = prompts.reduce<NonNullable<Person['prompts']>>((answers, p) => withAnswer(answers, p.q, p.a), []);
+    await saveProfile(me.id, { interests, prompts: normalized, year, major });
+    await reloadMe();
+    setPrompts(normalized);
+  });
   const toggle = (tag: string) => {
-    if (chosen.has(tag)) return save({ interests: interests.filter((t) => t !== tag) });
-    // At the cap the tap does nothing — the alternative is dropping somebody's
-    // oldest tag to make room for one they may have hit by accident.
-    if (interests.length < maxInterests) save({ interests: [...interests, tag] });
+    if (busy) return;
+    setInterests((current) => current.includes(tag) ? current.filter((t) => t !== tag)
+      : current.length < maxInterests ? [...current, tag] : current);
   };
 
   const todo = [
@@ -248,7 +254,7 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
     Alert.alert('Account', undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete account', style: 'destructive', onPress: confirmDelete },
-      { text: 'Sign out', onPress: () => void signOut() },
+      { text: 'Sign out', onPress: () => void run(signOut) },
     ]);
 
   return (
@@ -317,6 +323,16 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
         ) : null}
 
         <View style={{ gap: 10 }}>
+          <Eyebrow>CLASS YEAR</Eyebrow>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {[...new Set([...classYears, me.year])].map((choice) => <YearChip key={choice} label={choice}
+              selected={year === choice} onPress={() => { if (!busy) setYear(choice); }} />)}
+          </View>
+          <Eyebrow>MAJOR</Eyebrow>
+          <TextInput value={major} onChangeText={setMajor} maxLength={120} editable={!busy}
+            accessibilityLabel="Major" style={{ color: c.ink, fontFamily: font.regular, paddingVertical: 10 }} />
+        </View>
+        <View style={{ gap: 10 }}>
           <Eyebrow>WHAT YOU'D SHOW UP FOR</Eyebrow>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
             {interestTags.map((tag) => (
@@ -325,6 +341,7 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
                 label={tag}
                 selected={chosen.has(tag)}
                 onPress={() => toggle(tag)}
+                disabled={busy}
               />
             ))}
           </View>
@@ -342,11 +359,20 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
               q={q}
               placeholder={placeholder}
               answer={prompts.find((p) => p.q === q)?.a ?? ''}
-              onSave={(text) => save({ prompts: withAnswer(prompts, q, text) })}
+              disabled={busy}
+              onChange={(text) => setPrompts((current) => current.some((prompt) => prompt.q === q)
+                ? current.map((prompt) => prompt.q === q ? { q, a: text } : prompt)
+                : [...current, { q, a: text }])}
             />
           ))}
         </View>
 
+        <View style={{ gap: 8 }}>
+          <Text accessibilityLiveRegion="polite" style={{ color: c.mute, fontFamily: font.regular }}>
+            {busy ? 'Saving…' : dirty ? 'You have unsaved changes.' : 'Profile saved.'}
+          </Text>
+          <PrimaryButton label={busy ? 'Saving…' : 'Save profile'} disabled={busy || !dirty} onPress={save} />
+        </View>
         <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair, gap: 12 }}>
           <Eyebrow>ROOMS YOU HOST</Eyebrow>
           {hosts.length ? (
@@ -386,6 +412,8 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
           )}
         </View>
 
+        {pagination}
+        <LoadState error={blocksError} retry={loadBlocks} />
         {blocks.length ? (
           <View style={{ paddingTop: 18, borderTopWidth: 1, borderTopColor: c.hair, gap: 12 }}>
             <Eyebrow>BLOCKED</Eyebrow>
@@ -405,7 +433,7 @@ export function YourProfile({ me, rooms }: { me: Person; rooms: Room[] }) {
                   onPress={() =>
                     void run(async () => {
                       await unblock(b.reportId);
-                      loadBlocks();
+                      await loadBlocks();
                     })
                   }
                 />

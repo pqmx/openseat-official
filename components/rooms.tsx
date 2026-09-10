@@ -1,5 +1,8 @@
 import { Pressable, Text, View } from 'react-native';
 import {
+  attendeeCountOf,
+  hasAsked,
+  isClosed,
   isIn,
   isLive,
   metaOf,
@@ -41,7 +44,7 @@ export const RoomStatus = ({ status, small }: { status: Status; small?: boolean 
 const AvatarStack = ({ room }: { room: Room }) => {
   const { c } = useTheme();
   const shown = room.attendees.slice(0, 3);
-  const rest = room.attendees.length - shown.length;
+  const rest = attendeeCountOf(room) - shown.length;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {shown.map((p, i) => (
@@ -59,9 +62,9 @@ const AvatarStack = ({ room }: { room: Room }) => {
 };
 
 /** The raised, peeling hero card at the top of a feed. */
-export const RoomCard = ({ room, now }: { room: Room; now: Date }) => {
+export const RoomCard = ({ room, now, onOpen }: { room: Room; now: Date; onOpen?: () => void }) => {
   const { c } = useTheme();
-  const open = () => router.push(`/room/${room.id}`);
+  const open = onOpen ?? (() => router.push(`/room/${room.id}`));
   const full = seatsLeft(room) === 0;
   return (
     <Pressable
@@ -179,7 +182,7 @@ export const Roster = ({
 }) => {
   const { me } = useSession();
   const named = room.attendees.slice(0, limit);
-  const unnamed = room.attendees.length - named.length;
+  const unnamed = attendeeCountOf(room) - named.length;
   const open = seatsLeft(room);
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
@@ -208,7 +211,7 @@ export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
   const joined = !!me && isIn(room, me);
   const full = seatsLeft(room) === 0;
   const latest = room.updates[0];
-  const action = joined
+  const action = isClosed(room, now) ? 'View ended room' : me && hasAsked(room, me) ? 'View request' : joined
     ? 'Open room'
     : full
       ? 'Room is full'
@@ -242,7 +245,6 @@ export const RoomPreview = ({ room, now }: { room: Room; now: Date }) => {
 
       <PrimaryButton
         label={action}
-        disabled={full && !joined}
         onPress={() => router.push(`/room/${room.id}`)}
       />
     </View>

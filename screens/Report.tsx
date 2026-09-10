@@ -12,6 +12,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { submitReport } from '../api';
 import { useWrite } from '../feedback';
+import { MAX_REPORT_LENGTH } from '../room-rules';
 import { useSession } from '../session';
 import { em, font, radius, useTheme } from '../theme';
 
@@ -173,6 +174,7 @@ export function ReportSheet() {
           <Field label="WHAT HAPPENED (OPTIONAL)">
             <TextInput
               value={detail}
+              maxLength={MAX_REPORT_LENGTH}
               onChangeText={setDetail}
               multiline
               placeholder="A sentence is enough"
@@ -181,6 +183,7 @@ export function ReportSheet() {
               style={{ fontFamily: font.regular, fontSize: 14, color: c.ink, padding: 0 }}
             />
           </Field>
+          <Text style={{ color: c.mute, fontFamily: font.regular }}>{detail.length}/{MAX_REPORT_LENGTH}</Text>
 
           <View style={{ gap: 14 }}>
             <PrimaryButton

@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/react-native';
 import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
-import { Pressable, Text, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SessionProvider } from '../session';
@@ -39,7 +39,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
       style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center', padding: 22, gap: 14 }}>
       <Text style={[type.display, { color: c.ink }]}>That screen broke.</Text>
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
-        Something went wrong on our end. It has been reported.
+        Something went wrong. Please try again.
       </Text>
       <Pressable
         accessibilityRole="button"
@@ -59,13 +59,16 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 }
 
 function RootLayout() {
-  const [loaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_700Bold });
+  const [loaded, fontError] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_700Bold });
   // The design has a light and a dark set; the OS setting picks between them.
   const scheme: Scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const c = scheme === 'dark' ? dark : light;
   const value = useMemo(() => ({ c }), [c]);
 
-  if (!loaded) return null;
+  if (fontError) throw fontError;
+  if (!loaded) return <View style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center' }}>
+    <ActivityIndicator accessibilityLabel="Loading Openseat" color={c.coral} />
+  </View>;
 
   return (
     // Discover's sheet is dragged with gesture-handler, which needs a root of

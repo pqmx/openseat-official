@@ -27,6 +27,9 @@ import { tapFail, tapOk } from '../feedback';
 import { classYears, yearsForHost } from '../data';
 import { clock } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
+import { errorMessage } from '../errors';
+import { ROOM_DURATION_HOURS } from '../room-rules';
+import * as Sentry from '@sentry/react-native';
 
 /** Cancel / Back, and the STEP n / 2 counter — the bar on both create steps. */
 const WizardBar = ({
@@ -102,13 +105,7 @@ const PlaceRow = ({
   );
 };
 
-/**
- * One typing session, in the shape Google groups requests by. Not a secret and
- * not an id anything stores — it exists so a whole search bills as one lookup
- * instead of one per keystroke, which is why it is made once per search rather
- * than once per request. `Math.random` is fine for that; nothing here is
- * guessing-resistant, and it saves a dependency the app doesn't otherwise have.
- */
+/** A Places billing session token. Both predictions and details may be billable. */
 const newSession = () =>
   '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (ch) =>
     (+ch ^ (Math.floor(Math.random() * 256) & (15 >> (+ch / 4)))).toString(16),
@@ -124,7 +121,9 @@ export function CreateStep1() {
   // The picked place is the whole hit, not its name: step 2 needs the
   // coordinates, and a title alone is what used to put every room at the centre
   // of campus.
-  const [place, setPlace] = useState<PlaceHit>();
+  const [place, setPlace] = useState<PlaceHit & { id: string }>();
+  const selection = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => selection.current?.abort(), []);
   // Which row is being turned into coordinates. A prediction has none, so the
   // tap costs a round trip the old flow didn't have and has to say so.
   const [picking, setPicking] = useState<string>();
@@ -133,11 +132,7 @@ export function CreateStep1() {
   const [initialSession] = useState(newSession);
   const session = useRef(initialSession);
 
-  // Suggestions as you type. Every one of these is free inside `session` — the
-  // one charge is the `resolvePlace` below — so the debounce is only here to
-  // stop a fast typist holding several requests open at once, and to abandon the
-  // answer to a query you're no longer typing. Otherwise a slow early response
-  // lands on top of a fast later one.
+  // Debounce predictions and discard superseded responses.
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
@@ -148,7 +143,9 @@ export function CreateStep1() {
     const ctl = new AbortController();
     const id = setTimeout(async () => {
       try {
-        setHits(await searchPlaces(q, session.current, ctl.signal));
+        const results = await searchPlaces(q, session.current, ctl.signal);
+        if (ctl.signal.aborted) return;
+        setHits(results);
         setSearchFailed(undefined);
       } catch {
         if (ctl.signal.aborted) return;
@@ -161,22 +158,25 @@ export function CreateStep1() {
     };
   }, [query]);
 
-  /**
-   * The end of the session, and the only billed call in it. A fresh token
-   * afterwards, because reusing one across searches is how Google decides you
-   * were never in a session at all and charges per request.
-   */
+  // Resolve only the latest selection; each details attempt consumes its search session.
   const pick = async (s: PlaceSuggestion) => {
+    selection.current?.abort();
+    const ctl = new AbortController();
+    selection.current = ctl;
+    const token = session.current;
+    session.current = newSession();
+    setPlace(undefined);
     setPicking(s.id);
     try {
-      const { lat, lng } = await resolvePlace(s.id, session.current);
-      setPlace({ title: s.title, sub: s.sub, lat, lng });
+      const { lat, lng } = await resolvePlace(s.id, token, ctl.signal);
+      if (ctl.signal.aborted) return;
+      setPlace({ id: s.id, title: s.title, sub: s.sub, lat, lng });
       setSearchFailed(undefined);
-      session.current = newSession();
     } catch {
+      if (ctl.signal.aborted) return;
       setSearchFailed('Could not pin that place.');
     } finally {
-      setPicking(undefined);
+      if (!ctl.signal.aborted) setPicking(undefined);
     }
   };
 
@@ -215,7 +215,14 @@ export function CreateStep1() {
               <TextInput
                 testID="create-location"
                 value={query}
-                onChangeText={setQuery}
+                onChangeText={(text) => {
+                  selection.current?.abort();
+                  setPicking(undefined);
+                  setPlace(undefined);
+                  setHits([]);
+                  setQuery(text);
+                }}
+                maxLength={200}
                 placeholder="Where?"
                 placeholderTextColor={c.faint}
                 selectionColor={c.coral}
@@ -235,7 +242,7 @@ export function CreateStep1() {
                   title={p.title}
                   sub={picking === p.id ? 'Pinning…' : p.sub}
                   last={i === hits.length - 1}
-                  selected={p.title === place?.title}
+                  selected={p.id === place?.id}
                   onPress={() => pick(p)}
                 />
               ))
@@ -254,7 +261,7 @@ export function CreateStep1() {
           height={44}
           // No place, no pin, no room — and no title, now that the field starts
           // empty rather than prefilled with a mock one.
-          disabled={!place || !title.trim()}
+          disabled={!place || !title.trim() || !!picking}
           // Step 2 owns the draft's other half, so what you typed here rides
           // along in the URL — otherwise the room you create isn't the one you
           // described.
@@ -368,9 +375,12 @@ export function CreateStep2({
   const startsAt = when === 'Now' ? now : new Date(now.getTime() + 60 * 60_000);
 
   const [opening, setOpening] = useState(false);
+  const openingLock = useRef(false);
   const [failed, setFailed] = useState<string>();
 
   const open = async () => {
+    if (openingLock.current) return;
+    openingLock.current = true;
     setOpening(true);
     setFailed(undefined);
     try {
@@ -378,7 +388,7 @@ export function CreateStep2({
         {
           title,
           place,
-          startsAt,
+          startsAt: new Date(Date.now() + (when === 'Now' ? 0 : 3_600_000)),
           capacity: cap,
           access: approve ? 'approve' : 'open',
           years: yearsOnly && years.length ? yearsForHost(years, myYear) : undefined,
@@ -397,10 +407,12 @@ export function CreateStep2({
       tapOk();
       router.dismiss(2);
       router.push(`/room/${id}`);
-    } catch {
+    } catch (error) {
       tapFail();
-      setFailed('Could not open the room.');
+      Sentry.captureException(error, { tags: { operation: 'create-room' } });
+      setFailed(errorMessage(error));
     } finally {
+      openingLock.current = false;
       setOpening(false);
     }
   };
@@ -410,6 +422,7 @@ export function CreateStep2({
       <WizardBar left="Back" step="STEP 2 / 2" onLeft={() => router.back()} />
       <Body contentStyle={{ paddingHorizontal: 22, gap: 18, flexGrow: 1 }}>
         <Text style={[type.display, { color: c.ink }]}>When does the{'\n'}room go live?</Text>
+        <Text style={{ color: c.mute, fontFamily: font.regular }}>Rooms end {ROOM_DURATION_HOURS} hours after starting. You can end yours early.</Text>
 
         <View
           style={{
@@ -520,7 +533,7 @@ export function CreateStep2({
           />
           {yearsOnly ? (
             <View style={{ flexDirection: 'row', gap: 7 }}>
-              {classYears.map((y) => (
+              {[...new Set([...classYears, ...(myYear ? [myYear] : [])])].map((y) => (
                 <YearChip
                   key={y}
                   label={y}

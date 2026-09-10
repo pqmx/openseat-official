@@ -67,7 +67,7 @@ values
    null, 34.07, -118.44),
   ('22222222-2222-4222-8222-000000000010', 'Canceled room', 'A place',
    '11111111-1111-4111-8111-000000000004', now() + interval '1 hour', 8, 'open', null,
-   now(), 34.07, -118.44);
+   null, 34.07, -118.44);
 
 insert into public.room_members (room_id, profile_id, state) values
   ('22222222-2222-4222-8222-00000000000a', '11111111-1111-4111-8111-000000000001', 'member'),
@@ -82,6 +82,9 @@ insert into public.room_members (room_id, profile_id, state) values
   ('22222222-2222-4222-8222-000000000010', '11111111-1111-4111-8111-000000000004', 'member');
 
 -- ------------------------------------------------------------------- cases --
+
+-- Enroll the host before canceling, as the app does. Closed rooms reject new memberships.
+update public.rooms set canceled_at = now() where id = '22222222-2222-4222-8222-000000000010';
 
 create temp table check_result(
   test text, ok boolean, got text, expected text, detail text

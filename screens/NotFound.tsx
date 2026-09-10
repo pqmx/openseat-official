@@ -38,7 +38,7 @@ export function RouteError({ error, retry }: ErrorBoundaryProps) {
       style={{ flex: 1, backgroundColor: c.surface, justifyContent: 'center', padding: 22, gap: 12 }}>
       <Text style={[type.display, { color: c.ink }]}>That didn&rsquo;t load.</Text>
       <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
-        Something went wrong on our end. It has been reported.
+        Something went wrong. Please try again.
       </Text>
       <Pressable
         accessibilityRole="button"

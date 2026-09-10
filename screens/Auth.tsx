@@ -1,12 +1,14 @@
 import * as Apple from 'expo-apple-authentication';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Text, TextInput, useColorScheme, View } from 'react-native';
 import { saveProfile } from '../api';
 import { Body, Eyebrow, Field, PrimaryButton, StatusStrip, YearChip } from '../components/ui';
 import { classYears } from '../data';
 import { Refusal, useSession } from '../session';
 import { font, radius, type, useTheme } from '../theme';
+import { safeRoomDestination } from '../room-rules';
+import { errorMessage } from '../errors';
 
 const Problem = ({ message }: { message: string }) => {
   const { c } = useTheme();
@@ -29,6 +31,7 @@ export function SignIn() {
   const dark = useColorScheme() === 'dark';
   const { signInWithGoogle, signInWithApple } = useSession();
   const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
   const [failed, setFailed] = useState<string>();
   // Apple's own availability check rather than `Platform.OS`: it's false on
   // Android, on the simulator without an Apple ID, and on old iOS.
@@ -40,7 +43,8 @@ export function SignIn() {
   }, []);
 
   const go = (run: () => Promise<void>) => async () => {
-    if (busy) return;
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
     setFailed(undefined);
     try {
@@ -52,6 +56,7 @@ export function SignIn() {
       // tokens and client IDs, which tells the student nothing and us less.
       setFailed(e instanceof Refusal ? e.message : 'Sign-in failed. Try again.');
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   };
@@ -124,6 +129,8 @@ export function SignIn() {
 export function Onboarding() {
   const { c } = useTheme();
   const { me, reloadMe } = useSession();
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const lock = useRef(false);
   const [year, setYear] = useState<string>();
   const [major, setMajor] = useState('');
   const [focus, setFocus] = useState<string>();
@@ -133,16 +140,19 @@ export function Onboarding() {
   if (!me) return null;
 
   const save = async () => {
-    if (!year) return;
+    if (!year || lock.current) return;
+    lock.current = true;
     setBusy(true);
     setFailed(undefined);
     try {
       await saveProfile(me.id, { year, major });
       await reloadMe();
-      router.replace('/discover');
-    } catch {
-      setFailed('Could not save your profile. Try again.');
+      router.replace(safeRoomDestination(next) as '/discover');
+    } catch (error) {
+      setFailed(errorMessage(error));
+    } finally {
       setBusy(false);
+      lock.current = false;
     }
   };
 

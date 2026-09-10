@@ -7,6 +7,7 @@ import { ClockIcon, HomeIcon, PersonIcon, PlusIcon } from './icons';
 /** App tabs; the active slot follows the current route. */
 export const TabBar = () => {
   const { c } = useTheme();
+  const { bottom } = useSafeAreaInsets();
   const path = usePathname();
   const active = path.startsWith('/rooms') ? 'rooms' : path.startsWith('/discover') ? 'discover' : 'you';
   const slot = (
@@ -37,14 +38,15 @@ export const TabBar = () => {
   return (
     <View
       style={{
-        height: 78,
+        minHeight: 56 + bottom,
         backgroundColor: c.surface,
         borderTopWidth: 1,
         borderTopColor: c.hair,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 12,
-        paddingBottom: 16,
+        paddingTop: 8,
+        paddingBottom: Math.max(bottom, 8),
       }}>
       {slot('Discover', active === 'discover', <HomeIcon color={tint('discover')} />, () =>
         router.navigate('/discover')

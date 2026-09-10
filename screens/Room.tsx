@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -35,6 +37,9 @@ import {
 import { useWrite } from '../feedback';
 import {
   feedFor,
+  attendeeCountOf,
+  endsAt,
+  isEnded,
   hasAsked,
   isIn,
   isLive,
@@ -46,7 +51,8 @@ import {
 } from '../data';
 import { useSession } from '../session';
 import { router } from 'expo-router';
-import { ago } from '../time';
+import { ago, clock } from '../time';
+import { MAX_UPDATE_LENGTH, roomShareUrl } from '../room-rules';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Shared props for room route variants. */
@@ -111,17 +117,19 @@ const RoomScreen = ({
   const { c } = useTheme();
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.surface }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: c.surface }}>
       <StatusStrip />
       {topBar}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={contentStyle}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}>
         {children}
       </ScrollView>
       {footer}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -254,11 +262,12 @@ export function Room({ room, reload }: RoomScreenProps) {
                 <LockIcon color={c.mute2} />
                 <Text
                   style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute, lineHeight: 12.5 * 1.4 }}>
-                  Only {host.short} posts updates.{'\n'}You'll get a ping for each one.
+                  Only {host.short} posts updates.{'\n'}Open this room to check for changes.
                 </Text>
               </View>
               <TextButton
                 label={busy ? 'Leaving…' : 'Leave room'}
+                disabled={busy}
                 // Back to Discover rather than this screen: you're no longer in
                 // the room, and the roster you'd be looking at is no longer yours.
                 onPress={() =>
@@ -274,9 +283,11 @@ export function Room({ room, reload }: RoomScreenProps) {
             <>
               <Text
                 style={{ fontFamily: font.regular, fontSize: 12, color: c.mute2, lineHeight: 12 * 1.4 }}>
-                {asked ? `Waiting on\n${host.short}` : `${room.attendees.length} of ${room.capacity}\nseats taken`}
+                {asked ? `Waiting on\n${host.short}` : `${attendeeCountOf(room)} of ${room.capacity}\nseats taken`}
               </Text>
-              <JoinButton room={room} reload={reload} />
+              {asked ? <TextButton label={busy ? 'Withdrawing…' : 'Withdraw request'} disabled={busy}
+                onPress={() => me && run(async () => { await leaveRoom(room.id, me.id); await reload(); })}
+                style={{ color: c.danger }} /> : <JoinButton room={room} reload={reload} />}
             </>
           )}
         </Footer>
@@ -296,15 +307,15 @@ export function Room({ room, reload }: RoomScreenProps) {
             label="WHO'S HERE"
             right={
               isLive(room, now)
-                ? `${room.attendees.length} here now`
-                : `${room.attendees.length} going`
+                ? `${attendeeCountOf(room)} joined`
+                : `${attendeeCountOf(room)} going`
             }
           />
         </View>
         <Roster room={room} />
       </View>
 
-      <Updates updates={room.updates} now={now} label="HOST UPDATES" />
+      <Updates updates={room.updates} now={now} label="RECENT HOST UPDATES · LATEST 20" />
     </RoomScreen>
   );
 }
@@ -320,7 +331,7 @@ const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promi
     if (!text || !me) return;
     run(async () => {
       await postUpdate(room.id, me.id, text);
-      setDraft('');
+      setDraft((current) => current === draft ? '' : current);
       await reload();
     });
   };
@@ -329,13 +340,14 @@ const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promi
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
         <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>
-          Pings all {room.attendees.length}
+          Visible to {attendeeCountOf(room)} members
         </Text>
       </View>
       <TextInput
         value={draft}
         onChangeText={setDraft}
         multiline
+        maxLength={MAX_UPDATE_LENGTH}
         placeholder="Tell the room something"
         placeholderTextColor={c.faint}
         selectionColor={c.coral}
@@ -356,7 +368,7 @@ const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promi
       <View
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
-          Members can't post here
+          {draft.length}/{MAX_UPDATE_LENGTH} · Members read updates here
         </Text>
         <PrimaryButton
           label={busy ? 'Posting…' : 'Post update'}
@@ -374,11 +386,29 @@ const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promi
   );
 };
 
+/** Both host views expose the same lifecycle and sharing actions. */
+const HostControls = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
+  const { c } = useTheme();
+  const now = useNow();
+  const { busy, run } = useWrite();
+  const cancel = room.startsAt > now;
+  const label = cancel ? 'Cancel room' : 'End room';
+  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <Chip label="Share" disabled={busy} onPress={() => run(() => Share.share({
+      message: `${room.title} — ${roomShareUrl(room.id)}\nOpen this link on an iPhone with Openseat installed.`,
+    }))} />
+    <Chip label={label} color={c.danger} disabled={busy} onPress={() => Alert.alert(label + '?',
+      cancel ? 'This cancels the meetup for everyone who joined.' : 'This closes the room for everyone. It cannot be reopened.',
+      [{ text: 'Keep room open', style: 'cancel' }, { text: label, style: 'destructive',
+        onPress: () => void run(async () => { await endRoom(room.id, cancel); await reload(); }) }])} />
+    <Text style={{ color: c.mute, fontFamily: font.regular }}>Ends at {clock(endsAt(room))}</Text>
+  </View>;
+};
+
 /** Live room, host view — stats, roster, and the host-only composer. */
 export function RoomHost({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
   const now = useNow();
-  const { run } = useWrite();
   const stat = (n: string, label: string) => (
     <View key={label}>
       <Text style={{ fontFamily: font.bold, fontSize: 19, color: c.ink }}>{n}</Text>
@@ -406,7 +436,7 @@ export function RoomHost({ room, reload }: RoomScreenProps) {
       <View>
         <Text style={[type.display, { color: c.ink }]}>{room.title}</Text>
         <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-          You're hosting · {room.attendees.length}/{room.capacity} joined
+          You're hosting · {attendeeCountOf(room)}/{room.capacity} joined
         </Text>
       </View>
 
@@ -418,37 +448,21 @@ export function RoomHost({ room, reload }: RoomScreenProps) {
           borderBottomWidth: 1,
           borderBottomColor: c.hair,
         }}>
-        {stat(`${room.attendees.length}`, 'HERE NOW')}
+        {stat(`${attendeeCountOf(room)}`, 'HERE NOW')}
         {stat(`${seatsLeft(room)}`, 'SEATS LEFT')}
-        <View style={{ marginLeft: 'auto', alignSelf: 'center', flexDirection: 'row', gap: 8 }}>
-          <Chip
-            label="Share"
-            style={{ paddingVertical: 6 }}
-            onPress={() =>
-              Share.share({ message: `${room.title} — open seat on openseat` })
-            }
-          />
-          {/* No confirm step: the design doesn't draw one, and the canceled
-              screen it lands on is unambiguous about what just happened. */}
-          <Chip
-            label="End room"
-            color={c.danger}
-            style={{ paddingVertical: 6 }}
-            onPress={() => run(async () => (await endRoom(room.id), reload()))}
-          />
-        </View>
+        <HostControls room={room} reload={reload} />
       </View>
 
       <RoomMap room={room} />
 
       <View>
         <View style={{ marginBottom: 12 }}>
-          <SectionHead label="WHO'S HERE" right={`${room.attendees.length} here now`} />
+          <SectionHead label="WHO'S HERE" right={`${attendeeCountOf(room)} joined`} />
         </View>
         <Roster room={room} />
       </View>
 
-      <Updates updates={room.updates} now={now} label="YOUR UPDATES" />
+      <Updates updates={room.updates} now={now} label="RECENT UPDATES · LATEST 20" />
     </RoomScreen>
   );
 }
@@ -466,7 +480,7 @@ export function RoomHostRequests({ room, reload }: RoomScreenProps) {
       await (approve ? approveRequest : declineRequest)(room.id, person.id);
       await reload();
     });
-  const here = room.attendees.length;
+  const here = attendeeCountOf(room);
   return (
     <RoomScreen
       topBar={
@@ -543,6 +557,7 @@ export function RoomHostRequests({ room, reload }: RoomScreenProps) {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <TextButton
                       label="Decline"
+                      disabled={busy}
                       onPress={() => decide(p, false)}
                       style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
                     />
@@ -569,10 +584,11 @@ export function RoomHostRequests({ room, reload }: RoomScreenProps) {
           )}
 
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.faint, marginTop: 12 }}>
-            Requests close when the room ends. Nobody sees the address until you approve.
+            Requests close when the room ends. The venue is visible before approval.
           </Text>
         </View>
 
+      <HostControls room={room} reload={reload} />
       <RoomMap room={room} />
 
       <View>
@@ -592,13 +608,14 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
   const now = useNow();
   const host = room.host;
   const last = room.updates[0];
+  const ended = !room.canceledAt && isEnded(room, now);
   const alternative = feedFor(rooms, me?.year ?? '', now).find(
     (r) => r.id !== room.id && isLive(r, now)
   );
   return (
     <RoomScreen
       topBar={
-        <RoomTopBar muted room={room} center={<RoomStatus status={{ label: 'CANCELED', tone: 'off' }} />} />
+        <RoomTopBar muted room={room} center={<RoomStatus status={{ label: ended ? 'ENDED' : 'CANCELED', tone: 'off' }} />} />
       }
       contentStyle={{ paddingHorizontal: 22, paddingBottom: 6, gap: 24, flexGrow: 1 }}
       footer={
@@ -612,7 +629,7 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
       }>
       <View>
         <Text style={[type.display, { color: c.ink2 }]}>
-          {host.short} called off the {room.title.split(' ').slice(0, 2).join(' ').toLowerCase()}.
+          {ended ? 'This room has ended.' : `${host.short} canceled this room.`}
         </Text>
         <Text
           style={{
@@ -623,8 +640,7 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
             marginTop: 10,
             maxWidth: 302,
           }}>
-          Nothing's happening at {room.place} tonight. You're off the list — no need to tell
-          anyone.
+          {ended ? 'This meetup is finished. You can find another room or start a new one.' : `The meetup at ${room.place} was canceled. You do not need to attend.`}
         </Text>
       </View>
 
@@ -648,7 +664,7 @@ export function RoomCanceled({ room, rooms }: RoomScreenProps) {
           {room.title}
         </Text>
         <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute }}>
-          {room.place} · {room.attendees.length} had joined
+          {room.place} · {attendeeCountOf(room)} had joined
         </Text>
       </View>
 

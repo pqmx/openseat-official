@@ -117,7 +117,16 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     // Token refresh changes the session object, but does not change the profile.
   }, [sessionUserId, loadPerson]);
 
-  const reloadMe = useCallback(() => loadPerson(sessionUserId), [loadPerson, sessionUserId]);
+  const reloadMe = useCallback(async () => {
+    if (!sessionUserId) return;
+    const request = ++generation.current;
+    const person = await fetchPerson(sessionUserId);
+    if (userId.current !== sessionUserId || request !== generation.current) return;
+    if (!person) throw new Error('Profile could not be loaded.');
+    setMe(person);
+    setError(null);
+    setLoading(false);
+  }, [sessionUserId]);
 
   // No state to set on success in either of these: `onAuthStateChange` above is
   // already subscribed, so the session and the profile land through the same

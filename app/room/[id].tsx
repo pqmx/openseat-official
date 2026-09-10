@@ -1,6 +1,8 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useRooms } from '../../api';
-import { roomById, viewOf } from '../../data';
+import { Redirect, useLocalSearchParams } from 'expo-router';
+import { View } from 'react-native';
+import { useRoom, useNow } from '../../api';
+import { viewOf } from '../../data';
+import { LoadState } from '../../components/ui';
 import { NotFound } from '../../screens/NotFound';
 import { Room, RoomCanceled, RoomHost, RoomHostRequests } from '../../screens/Room';
 import { useSession } from '../../session';
@@ -13,33 +15,23 @@ const views = {
   host: RoomHost,
   requests: RoomHostRequests,
   canceled: RoomCanceled,
+  ended: RoomCanceled,
 } as const;
 
-/**
- * One route, four drawings, and `viewOf` decides which from the data alone.
- *
- * There used to be a `?view=` override here, because joining and ending a room
- * were local state and the fixtures had no way to express the transition. Both
- * are real writes now: joining inserts a membership and the reload comes back
- * with you in the roster, so the screen changes because the room did.
- */
+/** Room state and membership determine the screen. */
 export default function RoomRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { rooms, settled, error, reload } = useRooms();
-  const { me } = useSession();
-
-  if (error) throw error;
-  if (!me) return null;
-
-  const room = roomById(rooms, id);
-  // A bad id is a dead link, not room one. Saying so beats rendering somebody
-  // else's room as though it were the one you asked for — and it now also
-  // covers a room the database declined to send you.
-  //
-  // But only once the server has answered. Create pushes here the moment the
-  // room exists, before any fetch has returned it, so an absent room is "not
-  // yet" until `settled` — otherwise opening a room flashes a dead link at you.
-  if (!room) return settled ? <NotFound /> : null;
-  const Screen = views[viewOf(room, me)];
-  return <Screen key={room.id} room={room} rooms={rooms} reload={reload} />;
+  const { room, loading, error, reload } = useRoom(id);
+  const { me, session, loading: authLoading, needsOnboarding } = useSession();
+  const now = useNow();
+  if (authLoading) return <LoadState loading retry={reload} />;
+  if (!session) return <Redirect href={{ pathname: '/', params: { next: `/room/${id}` } }} />;
+  if (needsOnboarding) return <Redirect href={{ pathname: '/onboarding', params: { next: `/room/${id}` } }} />;
+  if (!me) return <Redirect href={{ pathname: '/', params: { next: `/room/${id}` } }} />;
+  // Wait for the detail request before treating a missing room as a dead link.
+  if (room === undefined || error && !room) return <LoadState loading={loading} error={error} retry={reload} />;
+  if (!room) return <NotFound />;
+  const Screen = views[viewOf(room, me, now)];
+  return <View style={{ flex: 1 }}><LoadState error={error} retry={reload} />
+    <Screen key={room.id} room={room} rooms={[]} reload={reload} /></View>;
 }

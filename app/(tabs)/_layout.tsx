@@ -1,13 +1,14 @@
 import { Redirect, Tabs } from 'expo-router';
 import { TabBar } from '../../components/tab-bar';
+import { LoadState } from '../../components/ui';
 import { useSession } from '../../session';
 
 /** Gate all tabs on an authenticated, onboarded profile. */
 export default function TabsLayout() {
-  const { session, loading, needsOnboarding } = useSession();
+  const { session, me, loading, needsOnboarding, reloadMe } = useSession();
 
-  if (loading) return null;
-  if (!session) return <Redirect href="/" />;
+  if (loading) return <LoadState loading retry={reloadMe} />;
+  if (!session || !me) return <Redirect href="/" />;
   if (needsOnboarding) return <Redirect href="/onboarding" />;
 
   return (

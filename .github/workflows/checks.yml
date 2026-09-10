@@ -1,13 +1,4 @@
-# The two gates that can fail a build.
-#
-# `npm run check` is tsc plus the three pure checks. `policies.check.sql` is the
-# fourth and used to be unrunnable here: the rules it exercises are RLS, and
-# there was no way to get the schema into a database CI controls. There is now —
-# `supabase/migrations/` is the schema, and `supabase/ci/bootstrap.sql` is the
-# handful of things Supabase supplies that a stock Postgres doesn't.
-#
-# No Supabase CLI and no Docker-in-Docker: a `postgres` service container and
-# psql are enough, because the migrations are plain SQL.
+# App regressions and database policies run without production credentials.
 
 name: Checks
 
@@ -26,7 +17,7 @@ concurrency:
 
 jobs:
   app:
-    name: tsc and pure checks
+    name: TypeScript and app regressions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -71,11 +62,15 @@ jobs:
 
       # ON_ERROR_STOP is what makes a failed check a failed job: the last block
       # of the file raises when any row came back ok = f.
-      - name: Run the policy checks
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f policies.check.sql
+      - name: Run the policy and launch checks
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f policies.check.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f launch.check.sql
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Verify concurrent room creation limits
         run: node scripts/check-concurrency.mjs
+      - name: Verify concurrent room closure
+        run: node scripts/check-room-close-concurrency.mjs

@@ -1,20 +1,25 @@
 import { Text, View } from 'react-native';
-import { useNow } from '../api';
-import { RoomList } from '../components/rooms';
-import { Body, Eyebrow, PrimaryButton, StatusStrip } from '../components/ui';
-import { isHost, isLive, myRooms, type Person, type Room } from '../data';
+import { leaveRoom, useNow } from '../api';
+import { useWrite } from '../feedback';
+import { RoomList, RoomRow } from '../components/rooms';
+import { Body, Eyebrow, PrimaryButton, StatusStrip, TextButton } from '../components/ui';
+import { hasAsked, isClosed, isHost, isLive, myRooms, type Person, type Room } from '../data';
 import { router } from 'expo-router';
 import { font, type, useTheme } from '../theme';
 
 /** The Rooms tab — what you're hosting and what you've joined. */
-export function Rooms({ rooms, me }: { rooms: Room[]; me: Person }) {
+export function Rooms({ rooms, me, reload, pagination }: { rooms: Room[]; me: Person; reload: () => Promise<void>; pagination?: React.ReactNode }) {
   const { c } = useTheme();
   const now = useNow();
+  const { busy, run } = useWrite();
   const mine = myRooms(rooms, me, now);
-  const hosting = mine.filter((r) => isHost(r, me));
-  const joined = mine.filter((r) => !isHost(r, me));
+  const active = mine.filter((r) => !isClosed(r, now));
+  const pending = active.filter((r) => hasAsked(r, me));
+  const hosting = active.filter((r) => isHost(r, me));
+  const joined = active.filter((r) => !isHost(r, me) && !hasAsked(r, me));
+  const history = mine.filter((r) => isClosed(r, now));
   const live = mine.filter((r) => isLive(r, now));
-  const later = mine.filter((r) => !isLive(r, now));
+  const later = active.filter((r) => !isLive(r, now));
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -27,6 +32,7 @@ export function Rooms({ rooms, me }: { rooms: Room[]; me: Person }) {
               ? [
                   live.length ? `${live.length} live now` : null,
                   later.length ? `${later.length} coming up` : null,
+                  !active.length && history.length ? 'Your past rooms are below' : null,
                 ]
                   .filter(Boolean)
                   .join(' · ')
@@ -41,6 +47,15 @@ export function Rooms({ rooms, me }: { rooms: Room[]; me: Person }) {
           </View>
         ) : null}
 
+        {pending.length ? <View style={{ gap: 16 }}>
+          <Eyebrow>WAITING FOR APPROVAL</Eyebrow>
+          {pending.map((room) => <View key={room.id} style={{ gap: 10 }}>
+            <RoomRow room={room} now={now} small right="Pending" />
+            <TextButton label="Withdraw request" disabled={busy} style={{ color: c.danger }}
+              onPress={() => run(async () => { await leaveRoom(room.id, me.id); await reload(); })} />
+          </View>)}
+        </View> : null}
+
         {joined.length ? (
           <View style={{ gap: 14, paddingTop: 20, borderTopWidth: 1, borderTopColor: c.hair }}>
             <Eyebrow>YOU'VE JOINED</Eyebrow>
@@ -48,6 +63,8 @@ export function Rooms({ rooms, me }: { rooms: Room[]; me: Person }) {
           </View>
         ) : null}
 
+        {history.length ? <View style={{ gap: 14 }}><Eyebrow>PAST ROOMS</Eyebrow><RoomList items={history} now={now} /></View> : null}
+        {pagination}
         <View style={{ marginTop: 'auto', paddingTop: 20 }}>
           <PrimaryButton label="Open a room" onPress={() => router.push('/create')} />
         </View>

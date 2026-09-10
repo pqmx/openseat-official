@@ -5,20 +5,21 @@
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "12.0.1",
     "@react-native-google-signin/google-signin": "^16.1.4",
     "@sentry/react-native": "~7.11.0",
     "@supabase/supabase-js": "2.111.0",
-    "expo": "~57.0.9",
+    "expo": "~57.0.20",
     "expo-apple-authentication": "~57.0.1",
     "expo-constants": "~57.0.8",
     "expo-dev-client": "~57.0.18",
-    "expo-font": "~57.0.1",
-    "expo-haptics": "~57.0.1",
+    "expo-font": "~57.0.3",
+    "expo-haptics": "~57.0.2",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.19",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-maps": "1.27.2",
     "react-native-reanimated": "4.5.1",
@@ -28,16 +29,24 @@
     "react-native-worklets": "0.10.1"
   },
   "overrides": {
-    "query-string": { "decode-uri-component": "0.5.0" },
-    "xcode": { "uuid": "11.1.1" }
+    "query-string": {
+      "decode-uri-component": "0.5.0"
+    },
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/plugin-transform-modules-commonjs": "7.29.7",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^57.0.5",
     "patch-package": "^8.0.1",
+    "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "check:native-bridge": "node scripts/check-native-bridge.mjs",
     "postinstall": "patch-package",
     "start": "expo start --dev-client",
     "ios": "expo run:ios",
@@ -46,8 +55,8 @@
     "e2e:smoke": "maestro test --include-tags smoke .maestro",
     "e2e:onboarding": "maestro test --include-tags onboarding .maestro",
     "e2e:write": "maestro test --include-tags write .maestro",
-    "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON snap.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON api.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON security.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON connectivity.check.ts",
-    "check:policies": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f policies.check.sql",
+    "check": "tsc --noEmit && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON time.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON data.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON snap.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON api.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON security.check.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON connectivity.check.ts && node ui.check.cjs",
+    "check:policies": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f policies.check.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f launch.check.sql",
     "doctor": "npx react-doctor@latest"
   },
   "private": true

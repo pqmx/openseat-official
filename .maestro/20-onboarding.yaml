@@ -9,7 +9,7 @@ tags:
 - extendedWaitUntil:
     visible: "Hey .*"
     timeout: 20000
-- tapOn: "Senior"
+- tapOn: "Grad"
 - tapOn:
     id: "onboarding-major"
 - inputText: "E2E Testing"
@@ -21,4 +21,3 @@ tags:
 - assertVisible: "Rooms"
 - assertVisible: "New"
 - assertVisible: "You"
-

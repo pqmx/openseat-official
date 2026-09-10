@@ -30,6 +30,8 @@ tags:
     timeout: 20000
 - assertVisible: "YOU'RE HOSTING"
 - tapOn: "End room"
+- assertVisible: "End room?"
+- tapOn: "End room"
 - extendedWaitUntil:
-    visible: "This room is closed for good"
+    visible: "This room has ended"
     timeout: 20000
