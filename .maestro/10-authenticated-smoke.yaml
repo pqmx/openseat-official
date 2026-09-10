@@ -4,7 +4,7 @@ tags:
   - smoke
 ---
 # This suite deliberately preserves Keychain/app state. Sign in once with the
-# dedicated E2E account before running it; see .maestro/README.md.
+# dedicated E2E account before running it; see README.md for simulator setup.
 - launchApp:
     clearState: false
 - extendedWaitUntil:
