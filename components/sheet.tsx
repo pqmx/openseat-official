@@ -48,13 +48,7 @@ export const BottomSheet = ({
   const { c } = useTheme();
   const [height, setHeight] = useState(0);
 
-  // Offsets measured down from the top of the container, so snaps[0] is the
-  // most closed. `nearestSnap` only cares about distance, not order.
-  // Keyed on the values, not the array, so a caller passing a fresh literal
-  // each render doesn't re-fire the effect below.
-  const key = detents.join();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` covers `detents`
-  const snaps = useMemo(() => detents.map((f) => Math.round(height * (1 - f))), [key, height]);
+  const snaps = useMemo(() => detents.map((f) => Math.round(height * (1 - f))), [detents, height]);
 
   const y = useSharedValue(0);
   const start = useSharedValue(0);
@@ -103,7 +97,6 @@ export const BottomSheet = ({
     // holds the instance, and the runtime takes either.
     .simultaneousWithExternalGesture(listRef as unknown as React.RefObject<React.ComponentType>)
     .onBegin(() => {
-      start.value = y.value;
       moving.value = false;
     })
     .onChange((e) => {
@@ -113,7 +106,6 @@ export const BottomSheet = ({
         const atTop = scrolled.value <= 0;
         if (!atTop || e.changeY < 0) return;
         moving.value = true;
-        start.value = y.value;
       }
       y.value = clamp(y.value + e.changeY, open, shut);
     })
