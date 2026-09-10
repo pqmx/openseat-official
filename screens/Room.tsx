@@ -45,12 +45,12 @@ import {
   type Update,
 } from '../data';
 import { useSession } from '../session';
-
-/** Shared props for room route variants. */
-export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[]; reload: () => Promise<void> };
 import { router } from 'expo-router';
 import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
+
+/** Shared props for room route variants. */
+export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[]; reload: () => Promise<void> };
 
 const RoomTopBar = ({
   center,
@@ -186,7 +186,10 @@ const JoinButton = ({ room, reload }: { room: RoomModel; reload: () => Promise<v
                 : `Join · ${left} ${left === 1 ? 'seat' : 'seats'} left`
       }
       disabled={asked || !left || busy}
-      onPress={() => me && run(async () => (await joinRoom(room.id, me.id, room.access), reload()))}
+      onPress={() => me && run(async () => {
+        await joinRoom(room.id, me.id, room.access);
+        await reload();
+      })}
       style={{ flex: 1, backgroundColor: asked || !left ? c.disabled : c.coral }}
     />
   );
@@ -259,7 +262,10 @@ export function Room({ room, reload }: RoomScreenProps) {
                 // Back to Discover rather than this screen: you're no longer in
                 // the room, and the roster you'd be looking at is no longer yours.
                 onPress={() =>
-                  me && run(async () => (await leaveRoom(room.id, me.id), router.replace('/discover')))
+                  me && run(async () => {
+                    await leaveRoom(room.id, me.id);
+                    router.replace('/discover');
+                  })
                 }
                 style={{ fontFamily: font.regular, fontSize: 13, color: c.danger }}
               />
