@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from 'expo-router';
-import { TabBar } from '../../components/ui';
+import { TabBar } from '../../components/tab-bar';
 import { useSession } from '../../session';
 
 /** Gate all tabs on an authenticated, onboarded profile. */
