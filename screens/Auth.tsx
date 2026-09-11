@@ -12,6 +12,10 @@ import { font, radius, type, useTheme } from '../theme';
 import { safeRoomDestination } from '../room-rules';
 import { errorMessage } from '../errors';
 
+const LocalTestSignIn = __DEV__ && process.env.EXPO_PUBLIC_LOCAL_TEST_AUTH === 'true'
+  ? require('../components/local-test-sign-in').LocalTestSignIn as typeof import('../components/local-test-sign-in').LocalTestSignIn
+  : null;
+
 const Problem = ({ message }: { message: string }) => {
   const { c } = useTheme();
   return (
@@ -90,6 +94,7 @@ export function SignIn() {
         {failed ? <Problem message={failed} /> : null}
 
         <View style={{ marginTop: 8, gap: 12 }}>
+          {LocalTestSignIn ? <LocalTestSignIn busy={busy} go={go} /> : null}
           <PrimaryButton
             label={busy ? 'One moment…' : 'Continue with Google'}
             disabled={busy}

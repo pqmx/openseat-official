@@ -1,3 +1,4 @@
+import { canUseLocalTestAccount } from './local-test-config.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -65,3 +66,11 @@ const query = require('query-string');
 assert.equal(query.parse('q=hello%20world').q, 'hello world');
 execFileSync(process.execPath, ['-e', `require('query-string').parse('q=' + '%E0%A4%A'.repeat(10000));`], { timeout: 5000 });
 console.log('dependency checks passed: vulnerable image parser absent and deep-link decoding bounded');
+
+assert.equal(canUseLocalTestAccount(true, 'true', 'http://127.0.0.1:54321'), true);
+assert.equal(canUseLocalTestAccount(true, 'true', 'http://localhost:54321/'), true);
+for (const url of ['https://example.supabase.co', 'http://127.0.0.1.evil.test:54321', 'http://localhost:54321@evil.test', undefined]) {
+  assert.equal(canUseLocalTestAccount(true, 'true', url), false);
+}
+assert.equal(canUseLocalTestAccount(false, 'true', 'http://127.0.0.1:54321'), false);
+assert.equal(canUseLocalTestAccount(true, undefined, 'http://127.0.0.1:54321'), false);

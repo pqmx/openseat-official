@@ -30,7 +30,7 @@ Run SQL suites sequentially so fixtures do not overlap. CI's database bootstrap 
 
 Install Maestro and an EAS `e2e` simulator build (`com.pqmx.openseat`). That build uses the `preview` environment: point it at a dedicated test Supabase project, never production.
 
-Sign in manually with a UCLA-eligible test account before authenticated flows. OAuth provider dialogs are manual tests; there is no authentication bypass.
+Sign in manually with a UCLA-eligible test account before authenticated flows. OAuth provider dialogs are manual tests.
 
 | Command | Account/setup | Coverage |
 | --- | --- | --- |
@@ -40,6 +40,13 @@ Sign in manually with a UCLA-eligible test account before authenticated flows. O
 | `npm run e2e:signed-out` | Run last; clears the saved session | Cold launch and auth gate |
 
 Two-account joins, reports/blocks, and account deletion need separately resettable test accounts. These flows do not cover native provider sign-in or replace physical-device testing.
+
+## Local test account
+
+Start Docker and run `npx supabase@2.117.0 start`, then `node scripts/setup-local-test.mjs`.
+Use the local API URL and publishable key from `npx supabase@2.117.0 status` with `EXPO_PUBLIC_LOCAL_TEST_AUTH=true` when starting Metro. The development sign-in screen shows **Use local test account**; complete onboarding once.
+
+The button only works with `http://127.0.0.1:54321` or `http://localhost:54321` and is excluded from release builds. The synthetic account exists only in the local database. This tests app/session behavior, not Google or Apple sign-in. Local Places tests still require a configured server-side Places key.
 
 ## Release
 
