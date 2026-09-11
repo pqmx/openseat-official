@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { UpdateComposer, Updates } from '../components/room-updates';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -7,7 +7,6 @@ import {
   ScrollView,
   Share,
   Text,
-  TextInput,
   View,
   type StyleProp,
   type ViewStyle,
@@ -31,7 +30,6 @@ import {
   endRoom,
   joinRoom,
   leaveRoom,
-  postUpdate,
   useNow,
 } from '../api';
 import { useWrite } from '../feedback';
@@ -47,12 +45,11 @@ import {
   statusOf,
   type Person,
   type Room as RoomModel,
-  type Update,
 } from '../data';
 import { useSession } from '../session';
 import { router } from 'expo-router';
 import { ago, clock } from '../time';
-import { MAX_UPDATE_LENGTH, roomShareUrl } from '../room-rules';
+import { roomShareUrl } from '../room-rules';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Shared props for room route variants. */
@@ -203,34 +200,6 @@ const JoinButton = ({ room, reload }: { room: RoomModel; reload: () => Promise<v
   );
 };
 
-const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label: string }) => {
-  const { c } = useTheme();
-  const { me } = useSession();
-  return (
-    <View style={{ gap: 14 }}>
-      <Eyebrow>{label}</Eyebrow>
-      {updates.length === 0 ? (
-        <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute }}>
-          Nothing posted yet.
-        </Text>
-      ) : (
-        updates.map((u, i) => {
-          const mine = u.by.id === me?.id;
-          return (
-            <NoteItem
-              key={u.id}
-              text={u.text}
-              meta={[mine ? 'You' : u.by.name, ago(u.at, now)].join(' · ')}
-              accent={i === 0 ? c.green : undefined}
-              muted={i > 0}
-            />
-          );
-        })
-      )}
-    </View>
-  );
-};
-
 /** Room details for members, pending requests, and visitors. */
 export function Room({ room, reload }: RoomScreenProps) {
   const { c } = useTheme();
@@ -319,72 +288,6 @@ export function Room({ room, reload }: RoomScreenProps) {
     </RoomScreen>
   );
 }
-
-/** Update composer shared by both host views. */
-const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
-  const { c } = useTheme();
-  const { me } = useSession();
-  const { busy, run } = useWrite();
-  const [draft, setDraft] = useState('');
-  const post = () => {
-    const text = draft.trim();
-    if (!text || !me) return;
-    run(async () => {
-      await postUpdate(room.id, me.id, text);
-      setDraft((current) => current === draft ? '' : current);
-      await reload();
-    });
-  };
-  return (
-    <Footer raised column gap={11}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={[type.eyebrow, { color: c.green }]}>POST AN UPDATE · HOST ONLY</Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: c.faint }}>
-          Visible to {attendeeCountOf(room)} members
-        </Text>
-      </View>
-      <TextInput
-        value={draft}
-        onChangeText={setDraft}
-        multiline
-        maxLength={MAX_UPDATE_LENGTH}
-        placeholder="Tell the room something"
-        placeholderTextColor={c.faint}
-        selectionColor={c.coral}
-        style={{
-          minHeight: 52,
-          paddingVertical: 12,
-          paddingHorizontal: 14,
-          borderRadius: radius.md,
-          borderWidth: 1.5,
-          borderColor: draft ? c.ink : c.hair2,
-          backgroundColor: c.surface,
-          fontFamily: font.regular,
-          fontSize: 14,
-          lineHeight: 14 * 1.45,
-          color: c.ink,
-        }}
-      />
-      <View
-        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
-          {draft.length}/{MAX_UPDATE_LENGTH} · Members read updates here
-        </Text>
-        <PrimaryButton
-          label={busy ? 'Posting…' : 'Post update'}
-          height={38}
-          disabled={!draft.trim() || busy}
-          onPress={post}
-          style={{
-            paddingHorizontal: 20,
-            borderRadius: radius.md,
-            backgroundColor: draft.trim() && !busy ? c.coral : c.disabled,
-          }}
-        />
-      </View>
-    </Footer>
-  );
-};
 
 /** Both host views expose the same lifecycle and sharing actions. */
 const HostControls = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
