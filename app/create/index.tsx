@@ -1,1 +1,1 @@
-export { CreateStep1 as default } from '../../screens/Create';
+export { CreateStep1 as default } from '../../screens/CreateDetails';

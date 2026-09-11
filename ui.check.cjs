@@ -178,7 +178,7 @@ async function main() {
   const lookups=[];
   const createApi={...baseApi,searchPlaces:async()=>[{id:'a',title:'Place A',sub:'A'},{id:'b',title:'Place B',sub:'B'}],
     resolvePlace:(id)=>{const d=deferred();lookups.push({id,...d});return d.promise;}};
-  const createScreen=loader({'../api':createApi})('screens/Create.tsx');
+  const createScreen=loader({'../api':createApi})('screens/CreateDetails.tsx');
   await act(async()=>{tree=create(React.createElement(createScreen.CreateStep1));});
   await act(async()=>{tree.root.findByProps({testID:'create-title'}).props.onChangeText('Study');tree.root.findByProps({testID:'create-location'}).props.onChangeText('Place');});
   await act(async()=>{await new Promise((resolve)=>setTimeout(resolve,180));});

@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { CreateStep2 } from '../../screens/Create';
+import { CreateStep2 } from '../../screens/CreateSettings';
 import { NotFound } from '../../screens/NotFound';
 import { useSession } from '../../session';
 

@@ -102,4 +102,3 @@ export const UpdateComposer = ({ room, reload }: { room: RoomModel; reload: () =
     </Footer>
   );
 };
-
