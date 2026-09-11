@@ -2,17 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { BackIcon, MenuIcon, MoreIcon } from '../components/icons';
 import { RoomRow } from '../components/rooms';
-import {
-  Avatar,
-  Body,
-  Chip,
-  Eyebrow,
-  PrimaryButton,
-  StatusStrip,
-  TextButton,
-  LoadState,
-  YearChip,
-} from '../components/ui';
+import { Avatar } from '../components/avatars';
+import { Body, StatusStrip, LoadState } from '../components/layout';
+import { Chip, PrimaryButton, TextButton, YearChip } from '../components/controls';
+import { Eyebrow } from '../components/ui';
 import { fetchBlocks, saveProfile, unblock, useNow, type Block } from '../api';
 import { useWrite } from '../feedback';
 import {

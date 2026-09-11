@@ -1,33 +1,16 @@
-import { UpdateComposer, Updates } from '../components/room-updates';
+import { RoomScreen, RoomTopBar, StateTag, SectionHead } from '../components/room-layout';
+import { Updates } from '../components/room-updates';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
   Text,
   View,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
 import { RoomMap } from '../components/room-map';
 import { RoomRow, RoomStatus, Roster } from '../components/rooms';
-import { BackIcon, LockIcon, MoreIcon } from '../components/icons';
+import { LockIcon } from '../components/icons';
+import { PrimaryButton, TextButton } from '../components/controls';
+import { Eyebrow, NoteItem } from '../components/ui';
+import { Footer } from '../components/layout';
 import {
-  Avatar,
-  Chip,
-  Eyebrow,
-  Footer,
-  NoteItem,
-  PrimaryButton,
-  StatusStrip,
-  TextButton,
-} from '../components/ui';
-import {
-  approveRequest,
-  declineRequest,
-  endRoom,
   joinRoom,
   leaveRoom,
   useNow,
@@ -36,139 +19,21 @@ import { useWrite } from '../feedback';
 import {
   feedFor,
   attendeeCountOf,
-  endsAt,
   isEnded,
   hasAsked,
   isIn,
   isLive,
   seatsLeft,
   statusOf,
-  type Person,
   type Room as RoomModel,
 } from '../data';
 import { useSession } from '../session';
 import { router } from 'expo-router';
-import { ago, clock } from '../time';
-import { roomShareUrl } from '../room-rules';
+import { ago } from '../time';
 import { em, font, radius, type, useTheme } from '../theme';
 
 /** Shared props for room route variants. */
 export type RoomScreenProps = { room: RoomModel; rooms: RoomModel[]; reload: () => Promise<void> };
-
-const RoomTopBar = ({
-  center,
-  muted,
-  room,
-}: {
-  center: React.ReactNode;
-  muted?: boolean;
-  room: RoomModel;
-}) => {
-  const { c } = useTheme();
-  const { me } = useSession();
-  // Reporting your own room would only ever name yourself, so from the host's
-  // side the ⋯ reports the room alone.
-  const host = room.host;
-  const target =
-    me && host.id === me.id
-      ? `/report?room=${room.id}`
-      : `/report?room=${room.id}&person=${host.id}&name=${encodeURIComponent(host.name)}`;
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 4,
-        paddingHorizontal: 22,
-        paddingBottom: 16,
-      }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}>
-        <BackIcon color={c.ink} />
-      </Pressable>
-      {center}
-      {/* The design's ⋯ menu has one item that leads anywhere: report. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="More"
-        onPress={() => router.push(target as never)}
-        hitSlop={10}>
-        <MoreIcon color={muted ? c.mute2 : c.ink} />
-      </Pressable>
-    </View>
-  );
-};
-
-/** Room layout with a scrollable body and fixed footer. */
-const RoomScreen = ({
-  topBar,
-  contentStyle,
-  footer,
-  children,
-}: {
-  topBar: React.ReactNode;
-  contentStyle?: StyleProp<ViewStyle>;
-  footer?: React.ReactNode;
-  children: React.ReactNode;
-}) => {
-  const { c } = useTheme();
-
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: c.surface }}>
-      <StatusStrip />
-      {topBar}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={contentStyle}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}>
-        {children}
-      </ScrollView>
-      {footer}
-    </KeyboardAvoidingView>
-  );
-};
-
-/** Small outlined tag beside the status — JOINED, CASUAL, LOCKED. */
-const StateTag = ({ label, icon, filled }: { label: string; icon?: boolean; filled?: boolean }) => {
-  const { c } = useTheme();
-  return (
-    <View
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 6,
-          paddingVertical: 3,
-          paddingHorizontal: filled ? 9 : 8,
-          borderRadius: radius.xs,
-        },
-        filled
-          ? { backgroundColor: c.coral }
-          : { borderWidth: 1, borderColor: c.hair2 },
-      ]}>
-      {icon ? <LockIcon size={10} color={c.mute2} /> : null}
-      <Text
-        style={[
-          type.eyebrow,
-          { fontSize: 9.5, letterSpacing: em(0.14, 9.5), color: filled ? c.onCoral : c.mute2 },
-        ]}>
-        {label}
-      </Text>
-    </View>
-  );
-};
-
-const SectionHead = ({ label, right }: { label: string; right: string }) => {
-  const { c } = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-      <Eyebrow>{label}</Eyebrow>
-      <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>{right}</Text>
-    </View>
-  );
-};
 
 /** Join or request access, subject to available seats. */
 const JoinButton = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
@@ -285,221 +150,6 @@ export function Room({ room, reload }: RoomScreenProps) {
       </View>
 
       <Updates updates={room.updates} now={now} label="RECENT HOST UPDATES · LATEST 20" />
-    </RoomScreen>
-  );
-}
-
-/** Both host views expose the same lifecycle and sharing actions. */
-const HostControls = ({ room, reload }: { room: RoomModel; reload: () => Promise<void> }) => {
-  const { c } = useTheme();
-  const now = useNow();
-  const { busy, run } = useWrite();
-  const cancel = room.startsAt > now;
-  const label = cancel ? 'Cancel room' : 'End room';
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-    <Chip label="Share" disabled={busy} onPress={() => run(() => Share.share({
-      message: `${room.title} — ${roomShareUrl(room.id)}\nOpen this link on an iPhone with Openseat installed.`,
-    }))} />
-    <Chip label={label} color={c.danger} disabled={busy} onPress={() => Alert.alert(label + '?',
-      cancel ? 'This cancels the meetup for everyone who joined.' : 'This closes the room for everyone. It cannot be reopened.',
-      [{ text: 'Keep room open', style: 'cancel' }, { text: label, style: 'destructive',
-        onPress: () => void run(async () => { await endRoom(room.id, cancel); await reload(); }) }])} />
-    <Text style={{ color: c.mute, fontFamily: font.regular }}>Ends at {clock(endsAt(room))}</Text>
-  </View>;
-};
-
-/** Live room, host view — stats, roster, and the host-only composer. */
-export function RoomHost({ room, reload }: RoomScreenProps) {
-  const { c } = useTheme();
-  const now = useNow();
-  const stat = (n: string, label: string) => (
-    <View key={label}>
-      <Text style={{ fontFamily: font.bold, fontSize: 19, color: c.ink }}>{n}</Text>
-      <Text
-        style={{ fontFamily: font.regular, fontSize: 11, letterSpacing: em(0.1, 11), color: c.mute2 }}>
-        {label}
-      </Text>
-    </View>
-  );
-  return (
-    <RoomScreen
-      topBar={
-        <RoomTopBar
-          room={room}
-          center={
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <RoomStatus status={statusOf(room, now)} />
-              <StateTag label="YOU'RE HOSTING" filled />
-            </View>
-          }
-        />
-      }
-      contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 20 }}
-      footer={<UpdateComposer room={room} reload={reload} />}>
-      <View>
-        <Text style={[type.display, { color: c.ink }]}>{room.title}</Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-          You're hosting · {attendeeCountOf(room)}/{room.capacity} joined
-        </Text>
-      </View>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: 22,
-          paddingBottom: 18,
-          borderBottomWidth: 1,
-          borderBottomColor: c.hair,
-        }}>
-        {stat(`${attendeeCountOf(room)}`, 'HERE NOW')}
-        {stat(`${seatsLeft(room)}`, 'SEATS LEFT')}
-        <HostControls room={room} reload={reload} />
-      </View>
-
-      <RoomMap room={room} />
-
-      <View>
-        <View style={{ marginBottom: 12 }}>
-          <SectionHead label="WHO'S HERE" right={`${attendeeCountOf(room)} joined`} />
-        </View>
-        <Roster room={room} />
-      </View>
-
-      <Updates updates={room.updates} now={now} label="RECENT UPDATES · LATEST 20" />
-    </RoomScreen>
-  );
-}
-
-/** Locked room, host view — the approve/decline queue. */
-export function RoomHostRequests({ room, reload }: RoomScreenProps) {
-  const { c } = useTheme();
-  const now = useNow();
-  const { busy, run } = useWrite();
-  // No local "decided" set any more: an approval moves the row to `member`, so
-  // the reload takes the person out of `requests` and puts them in the roster.
-  const waiting = room.requests;
-  const decide = (person: Person, approve: boolean) =>
-    run(async () => {
-      await (approve ? approveRequest : declineRequest)(room.id, person.id);
-      await reload();
-    });
-  const here = attendeeCountOf(room);
-  return (
-    <RoomScreen
-      topBar={
-        <RoomTopBar
-          room={room}
-          center={
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-              <RoomStatus status={statusOf(room, now)} />
-              <StateTag label="LOCKED" icon />
-            </View>
-          }
-        />
-      }
-      contentStyle={{ paddingHorizontal: 22, paddingBottom: 24, gap: 20 }}
-      footer={
-        // The footer used to be a button that routed to the other host screen
-        // to find a composer. An approve-room host never reaches that screen —
-        // this is their room screen — so the composer belongs here too.
-        <UpdateComposer room={room} reload={reload} />
-      }>
-      <View>
-        <Text style={[type.display, { color: c.ink }]}>{room.title}</Text>
-        <Text style={{ fontFamily: font.regular, fontSize: 13, color: c.mute, marginTop: 8 }}>
-          You're hosting · {here}/{room.capacity} joined · you approve each request
-        </Text>
-      </View>
-
-      <View style={{ paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: c.hair }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              marginBottom: 4,
-            }}>
-            <RoomStatus
-              status={{
-                label: `JOIN REQUESTS · ${waiting.length}`,
-                tone: waiting.length ? 'live' : 'off',
-              }}
-            />
-            <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.mute }}>
-              {Math.max(0, room.capacity - here)} seats left
-            </Text>
-          </View>
-
-          {waiting.length === 0 ? (
-            <Text style={{ fontFamily: font.regular, fontSize: 13.5, color: c.mute, paddingTop: 14 }}>
-              Nobody's waiting. New requests land here.
-            </Text>
-          ) : (
-            waiting.map((p, i) => {
-              return (
-                <View
-                  key={p.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    paddingVertical: 14,
-                    borderBottomWidth: i === waiting.length - 1 ? 0 : 1,
-                    borderBottomColor: c.hairFaint,
-                  }}>
-                  <Avatar initials={p.initials} tone={p.tone} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={{ fontFamily: font.medium, fontSize: 14.5, color: c.ink }}>
-                      {p.name}.
-                    </Text>
-                    <Text
-                      style={{ fontFamily: font.regular, fontSize: 12, color: c.mute, marginTop: 2 }}>
-                      {p.year} · {p.major}
-                    </Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <TextButton
-                      label="Decline"
-                      disabled={busy}
-                      onPress={() => decide(p, false)}
-                      style={{ fontFamily: font.regular, fontSize: 12.5, color: c.mute }}
-                    />
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Approve ${p.name}`}
-                      disabled={busy}
-                      onPress={() => decide(p, true)}
-                      style={{
-                        paddingVertical: 7,
-                        paddingHorizontal: 13,
-                        borderRadius: radius.chip,
-                        borderWidth: 1.5,
-                        borderColor: c.ink,
-                      }}>
-                      <Text style={{ fontFamily: font.medium, fontSize: 12.5, color: c.ink }}>
-                        Approve
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })
-          )}
-
-          <Text style={{ fontFamily: font.regular, fontSize: 12, color: c.faint, marginTop: 12 }}>
-            Requests close when the room ends. The venue is visible before approval.
-          </Text>
-        </View>
-
-      <HostControls room={room} reload={reload} />
-      <RoomMap room={room} />
-
-      <View>
-        <View style={{ marginBottom: 12 }}>
-          <SectionHead label="WHO'S HERE" right={`${here} approved`} />
-        </View>
-        <Roster room={room} showOpenSeats />
-      </View>
     </RoomScreen>
   );
 }

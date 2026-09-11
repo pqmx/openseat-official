@@ -1,7 +1,8 @@
 import { useRooms } from '../../api';
 import { YourProfile } from '../../screens/Profile';
 import { useSession } from '../../session';
-import { LoadState, PrimaryButton } from '../../components/ui';
+import { LoadState } from '../../components/layout';
+import { PrimaryButton } from '../../components/controls';
 import { View } from 'react-native';
 
 export default function YouRoute() {

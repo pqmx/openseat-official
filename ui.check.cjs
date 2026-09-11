@@ -34,8 +34,17 @@ const baseMocks = {
   'react-native-reanimated':{__esModule:true,default:{View:'AnimatedView',FlatList:'AnimatedFlatList'},useAnimatedRef:()=>React.useRef(null)},
   '../theme':theme,'./theme':theme,
   '../components/icons':surfaces,
+  './icons':surfaces,
   '../components/ui':surfaces,
   './ui':surfaces,
+  '../components/avatars':surfaces,
+  './avatars':surfaces,
+  '../components/controls':surfaces,
+  './controls':surfaces,
+  '../components/layout':surfaces,
+  './layout':surfaces,
+  '../components/map-filter-button':surfaces,
+  './map-filter-button':surfaces,
   '../components/rooms':surfaces,
   '../components/sheet':{BottomSheet:'BottomSheet'},
   '../prefs':{getMapsApp:async()=>undefined,setMapsApp:async()=>{}},
@@ -197,7 +206,7 @@ async function main() {
   // members see withdrawal; neither view promises push or private addresses.
   const closed=[];
   const roomApi={...baseApi,endRoom:async(...args)=>closed.push(args)};
-  const roomScreen=loader({'../api':roomApi,'../session':{useSession:()=>({me:person})}})('screens/Room.tsx');
+  const roomScreen=loader({'../api':roomApi,'../session':{useSession:()=>({me:person})}})('screens/RoomHost.tsx');
   for (const name of ['RoomHost','RoomHostRequests']) {
     await act(async()=>{tree=create(React.createElement(roomScreen[name],{room,rooms:[],reload:async()=>{}}));});
     await act(async()=>findButton(tree,'End room').props.onPress());
@@ -216,7 +225,7 @@ async function main() {
   const composerScreen = loader({'../feedback': feedback, '../api': {...baseApi,
     postUpdate: async (_roomId, _personId, text) => {
       const request = deferred(); posts.push({text, ...request}); return request.promise;
-    }}, '../session': {useSession: () => ({me: person})}})('screens/Room.tsx');
+    }}, '../session': {useSession: () => ({me: person})}})('screens/RoomHost.tsx');
   await act(async () => { tree = create(React.createElement(composerScreen.RoomHost, {room, rooms: [], reload: async () => {}})); });
   const composer = () => tree.root.findByType('TextInput');
   await act(async () => composer().props.onChangeText('First update'));

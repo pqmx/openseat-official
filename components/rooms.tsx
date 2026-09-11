@@ -17,7 +17,9 @@ import { useSession } from '../session';
 import { router } from 'expo-router';
 import { em, font, radius, type, useTheme } from '../theme';
 import { PeelCorner } from './icons';
-import { Avatar, AvatarCell, NoteItem, PrimaryButton, SlotCell, StatusLine } from './ui';
+import { Avatar, AvatarCell, SlotCell } from './avatars';
+import { NoteItem, StatusLine } from './ui';
+import { PrimaryButton } from './controls';
 import { ago } from '../time';
 
 /** One rule for how a room's status reads, everywhere a room appears. */

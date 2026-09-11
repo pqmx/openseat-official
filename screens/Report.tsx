@@ -1,14 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import {
-  Body,
-  Field,
-  PrimaryButton,
-  Radio,
-  StatusStrip,
-  TextButton,
-  Toggle,
-} from '../components/ui';
+import { Body, StatusStrip } from '../components/layout';
+import { Field, PrimaryButton, Radio, TextButton, Toggle } from '../components/controls';
 import { router, useLocalSearchParams } from 'expo-router';
 import { submitReport } from '../api';
 import { useWrite } from '../feedback';

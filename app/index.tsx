@@ -1,6 +1,6 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { safeRoomDestination } from '../room-rules';
-import { LoadState } from '../components/ui';
+import { LoadState } from '../components/layout';
 import { SignIn } from '../screens/Auth';
 import { useSession } from '../session';
 import { useWrite } from '../feedback';

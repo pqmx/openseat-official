@@ -3,7 +3,8 @@ import { useCallback } from 'react';
 import { View } from 'react-native';
 import { fetchPerson, useRooms } from '../../../api';
 import { useRoomResource } from '../../../room-resource';
-import { LoadState, PrimaryButton } from '../../../components/ui';
+import { LoadState } from '../../../components/layout';
+import { PrimaryButton } from '../../../components/controls';
 import { NotFound } from '../../../screens/NotFound';
 import { Profile } from '../../../screens/Profile';
 

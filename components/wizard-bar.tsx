@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { font, useTheme } from '../theme';
-import { Eyebrow, TextButton } from './ui';
+import { Eyebrow } from './ui';
+import { TextButton } from './controls';
 
 export const WizardBar = ({
   left,

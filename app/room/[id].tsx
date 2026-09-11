@@ -1,10 +1,11 @@
+import { RoomHost, RoomHostRequests } from '../../screens/RoomHost';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 import { useRoom, useNow } from '../../api';
 import { viewOf } from '../../data';
-import { LoadState } from '../../components/ui';
+import { LoadState } from '../../components/layout';
 import { NotFound } from '../../screens/NotFound';
-import { Room, RoomCanceled, RoomHost, RoomHostRequests } from '../../screens/Room';
+import { Room, RoomCanceled } from '../../screens/Room';
 import { useSession } from '../../session';
 
 /** Four screens behind one route; a throw in any of them stops here. */

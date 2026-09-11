@@ -7,7 +7,9 @@ import { MAX_UPDATE_LENGTH } from '../room-rules';
 import { useSession } from '../session';
 import { font, radius, type, useTheme } from '../theme';
 import { ago } from '../time';
-import { Eyebrow, Footer, NoteItem, PrimaryButton } from './ui';
+import { Eyebrow, NoteItem } from './ui';
+import { Footer } from './layout';
+import { PrimaryButton } from './controls';
 
 export const Updates = ({ updates, now, label }: { updates: Update[]; now: Date; label: string }) => {
   const { c } = useTheme();
