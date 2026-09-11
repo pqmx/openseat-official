@@ -20,3 +20,26 @@ index 6115e87..957527c 100644
  
    RuntimeScheduler(const RuntimeScheduler &) = delete;
  
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+@@ -767,6 +767,9 @@
+     // See `withGuaranteedContext` for why neither the context nor the runtime is retained here, and
+     // why the result is written to the caller's slot instead of being returned.
+     withGuaranteedContext(context) { (context: HostFunctionContext, runtime) in
++      // Rebind at the immediate actor boundary; this call is synchronous.
++      nonisolated(unsafe) let thisPtr = thisPtr
++      nonisolated(unsafe) let argumentsPtr = argumentsPtr
+       resultPtr.pointee = JavaScriptActor.assumeIsolated {
+         return forwardingSwiftErrorsToJS(runtime: runtime) {
+           let this = UnsafeMutablePointer(mutating: thisPtr).move()
+@@ -810,6 +813,9 @@
+     // See `withGuaranteedContext` for why neither the context nor the runtime is retained here, and
+     // why the result is written to the caller's slot instead of being returned.
+     withGuaranteedContext(context) { (context: UnownedThisHostFunctionContext, runtime) in
++      // Rebind at the immediate actor boundary; this call is synchronous.
++      nonisolated(unsafe) let thisPtr = thisPtr
++      nonisolated(unsafe) let argumentsPtr = argumentsPtr
+       resultPtr.pointee = JavaScriptActor.assumeIsolated {
+         return forwardingSwiftErrorsToJS(runtime: runtime) {
+           let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtr, count: argumentsCount)
