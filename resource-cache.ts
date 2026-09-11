@@ -5,10 +5,23 @@ export const createResourceCache = <T>(fetchValue: () => Promise<T>) => {
   let pending: Promise<T> | undefined;
   const listeners = new Set<() => void>();
   const cache = {
-    get value() { return value; },
-    get observed() { return listeners.size > 0; },
-    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    invalidate() { revision++; pending = undefined; listeners.forEach((fn) => fn()); },
+    get value() {
+      return value;
+    },
+    get observed() {
+      return listeners.size > 0;
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    invalidate() {
+      revision++;
+      pending = undefined;
+      listeners.forEach((fn) => fn());
+    },
     read(): Promise<T> {
       if (pending) return pending;
       const generation = revision;
@@ -20,10 +33,14 @@ export const createResourceCache = <T>(fetchValue: () => Promise<T>) => {
       }, (error) => {
         if (generation !== revision) return cache.read();
         throw error;
-      }).finally(() => { if (pending === request) pending = undefined; });
+      }).finally(() => {
+        if (pending === request) pending = undefined;
+      });
       pending = request;
       return request;
     },
   };
   return cache;
 };
+
+export type ResourceCache<T> = ReturnType<typeof createResourceCache<T>>;
