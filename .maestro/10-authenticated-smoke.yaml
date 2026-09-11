@@ -17,6 +17,10 @@ tags:
 - assertVisible: "Your rooms"
 - tapOn: "You"
 - assertVisible: "Verified Bruin"
+- scrollUntilVisible:
+    element:
+      id: "account-options"
+    direction: DOWN
 - tapOn:
     id: "account-options"
 - assertVisible: "Account"
