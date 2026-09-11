@@ -1,0 +1,15 @@
+appId: com.pqmx.openseat
+name: Local test-account sign-in
+tags:
+  - local
+---
+# Requires the localhost development build and scripts/setup-local-test.mjs.
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Use local test account"
+    timeout: 30000
+- tapOn: "Use local test account"
+- extendedWaitUntil:
+    visible: "Hey .*|Discover"
+    timeout: 30000
