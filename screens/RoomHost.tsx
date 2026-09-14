@@ -77,9 +77,9 @@ export function RoomHost({ room, reload }: RoomScreenProps) {
         }}>
         {stat(`${attendeeCountOf(room)}`, 'HERE NOW')}
         {stat(`${seatsLeft(room)}`, 'SEATS LEFT')}
-        <HostControls room={room} reload={reload} />
       </View>
 
+      <HostControls room={room} reload={reload} />
       <RoomMap room={room} />
 
       <View>

@@ -1,0 +1,38 @@
+appId: com.pqmx.openseat
+name: Local room lifecycle with a fixed venue
+tags:
+  - local-write
+---
+# Local account only. The fixed venue skips Google Places; settings and writes are real.
+- launchApp:
+    clearState: false
+- tapOn: "New"
+- assertVisible: "STEP 1 / 2"
+- openLink: "openseat://create/details?title=Local%20flow%20room&place=Powell%20Library&lat=34.0716&lng=-118.4422"
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "STEP 2 / 2"
+    timeout: 15000
+- tapOn: "Open the room"
+- extendedWaitUntil:
+    visible: "YOU'RE HOSTING"
+    timeout: 20000
+- assertVisible: "Local flow room"
+- tapOn: "Tell the room something"
+- inputText: "Meet inside the library"
+- tapOn: "Post update"
+- scrollUntilVisible:
+    element:
+      text: "Meet inside the library"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "End room"
+    direction: UP
+- tapOn: "End room"
+- tapOn: "End room"
+- extendedWaitUntil:
+    visible: "This room has ended."
+    timeout: 20000
